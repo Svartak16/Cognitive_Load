@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Cognitive Load Engine</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="lib/chart.js"></script>
+</head>
+<body>
+    <h1>Cognitive Load Analysis</h1>
+    
+    <!-- ML Cognitive Load Section (NEW) -->
+    <div id="ml-section" class="section-box">
+        <h2>ML Cognitive Load Detection</h2>
+        <div class="ml-score-display">
+            <div class="score-circle" id="ml-score-circle">
+                <span id="ml-score-percentage">--</span>
+            </div>
+            <div class="score-info">
+                <p><strong>Load Level:</strong> <span id="ml-load-level">Unknown</span></p>
+                <p><strong>Status:</strong> <span id="ml-status">Initializing...</span></p>
+            </div>
+        </div>
+        <div class="ml-model-info">
+            <p style="font-size: 12px; color: #666; margin-top: 10px;">
+                <strong>Model Status:</strong> <span id="model-status">Loading...</span><br>
+                <strong>Training Samples:</strong> <span id="training-samples">0</span>
+            </p>
+        </div>
+    </div>
+
+    <div class="separator"></div>
+
+    <!-- Original Analysis Section -->
+    <div id="analysis-container">
+        <h2>Traditional Metrics</h2>
+        <p><strong>Time on Page:</strong> <span id="time-on-page">0s</span></p>
+        <p><strong>Scroll Depth:</strong> <span id="scroll-depth">0%</span></p>
+        <p><strong>Hovers:</strong> <span id="hover-count">0</span></p>
+        <p><strong>Clicks:</strong> <span id="click-count">0</span></p>
+        <p><strong>Confusion Score:</strong> <span id="confusion-score">0</span></p>
+        <p id="help-message" style="display:none;"></p>
+    </div>
+
+    <div class="separator"></div>
+
+    <h2>Activity Dashboard</h2>
+    <div class="chart-container">
+        <canvas id="myChart"></canvas>
+    </div>
+
+    <div class="separator"></div>
+
+    <h2>✨ AI Summarization Tool</h2>
+    <div id="summarization-box">
+        <textarea id="text-to-summarize" placeholder="Paste text here to summarize..."></textarea>
+        <button id="process-summary-btn">Get Summary</button>
+        <div id="summarized-output"></div>
+    </div>
+    
+    <div class="separator"></div>
+    
+    <!-- Updated Button Group -->
+    <div class="button-group">
+        <button id="download-logs-btn">Download Logs</button>
+        <button id="feedback-btn">Give Feedback</button>
+        <button id="reset-model-btn">Reset ML Model</button>
+    </div>
+
+    <div class="separator"></div>
+
+    <!-- Model Management Section (NEW) -->
+    <div class="model-management">
+        <h3 style="font-size: 14px; margin-bottom: 10px;">Model Management</h3>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+            <button id="export-model-btn" class="small-btn">Export Model</button>
+            <button id="view-history-btn" class="small-btn">View History</button>
+        </div>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>
