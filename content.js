@@ -134,6 +134,7 @@ chrome.runtime.sendMessage({
 // without changing how cognitive load is currently detected (ML score + threshold).
 
 let sidebar = null;
+
 let actionLogs = [];
 
 const clickHistory = new Map(); // key -> timestamps[] (rage clicks)
@@ -1204,6 +1205,12 @@ console.log('%c🧠 Cognitive Load Engine Active', 'background: #667eea; color: 
 console.log('%cPress Ctrl+Shift+F (Cmd+Shift+F on Mac) to provide feedback', 'color: #667eea; font-size: 12px;');
 console.log('%cAccess ML detector: window.mlDetector', 'color: #666; font-size: 11px;');
 
+
+chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === "TRIGGER_FEEDBACK") {
+        provideFeedbackDialog();
+    }
+});
 // Expose useful functions for debugging
 window.cognitiveLoadDebug = {
     getCurrentScore: () => window.mlDetector ? window.mlDetector.getCurrentScore() : null,

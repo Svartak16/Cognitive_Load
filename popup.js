@@ -1,561 +1,297 @@
-// // popup.js
-
-// document.addEventListener("DOMContentLoaded", () => {
-//     const timeOnPageEl = document.getElementById("time-on-page");
-//     const scrollDepthEl = document.getElementById("scroll-depth");
-//     const hoverCountEl = document.getElementById("hover-count");
-//     const clickCountEl = document.getElementById("click-count");
-//     const confusionScoreEl = document.getElementById("confusion-score");
-//     const helpMessageEl = document.getElementById("help-message");
-//     const ctx = document.getElementById('myChart').getContext('2d');
-//     let myChart;
-
-//     const summarizeBtn = document.getElementById("process-summary-btn");
-//     const downloadLogsBtn = document.getElementById("download-logs-btn");
-//     const feedbackBtn = document.getElementById("feedback-btn");
-    
-//     const textToSummarize = document.getElementById("text-to-summarize");
-//     const summarizedOutput = document.getElementById("summarized-output");
-
-//     // Display initial log data
-//     chrome.storage.local.get("userLog", (data) => {
-//         const log = data.userLog || { scrollDepth: 0, hoverCount: 0, clickCount: 0, timeOnPage: 0, confusionScore: 0 };
-//         updatePopupUI(log);
-//         updateChart(log);
-//     });
-
-//     // Listen for summarization response from background.js
-//     chrome.runtime.onMessage.addListener((message) => {
-//         if (message.type === "SUMMARIZE_RESPONSE") {
-//             summarizedOutput.textContent = message.summary;
-//         }
-//     });
-
-//     function updatePopupUI(log) {
-//         timeOnPageEl.textContent = `${log.timeOnPage}s`;
-//         scrollDepthEl.textContent = `${log.scrollDepth.toFixed(1)}%`;
-//         hoverCountEl.textContent = log.hoverCount;
-//         clickCountEl.textContent = log.clickCount;
-//         confusionScoreEl.textContent = log.confusionScore;
-//         if (log.confusionScore >= 2) {
-//             helpMessageEl.style.display = 'block';
-//             helpMessageEl.innerHTML = `<strong>Need help?</strong> It looks like you might be confused.`;
-//         } else {
-//             helpMessageEl.style.display = 'none';
-//         }
-//     }
-
-//     function updateChart(log) {
-//         const data = [log.timeOnPage, log.scrollDepth.toFixed(1), log.hoverCount, log.clickCount];
-//         if (myChart) {
-//             myChart.data.datasets[0].data = data;
-//             myChart.update();
-//         } else {
-//             myChart = new Chart(ctx, {
-//                 type: 'bar',
-//                 data: {
-//                     labels: ['Time (s)', 'Scroll (%)', 'Hovers', 'Clicks'],
-//                     datasets: [{
-//                         label: 'User Activity',
-//                         data: data,
-//                         backgroundColor: [
-//                             'rgba(52, 152, 219, 0.5)',
-//                             'rgba(46, 204, 113, 0.5)',
-//                             'rgba(241, 196, 15, 0.5)',
-//                             'rgba(231, 76, 60, 0.5)'
-//                         ],
-//                         borderColor: [
-//                             'rgba(52, 152, 219, 1)',
-//                             'rgba(46, 204, 113, 1)',
-//                             'rgba(241, 196, 15, 1)',
-//                             'rgba(231, 76, 60, 1)'
-//                         ],
-//                         borderWidth: 1
-//                     }]
-//                 },
-//                 options: {
-//                     responsive: true,
-//                     maintainAspectRatio: false,
-//                     scales: {
-//                         y: {
-//                             beginAtZero: true
-//                         }
-//                     },
-//                     plugins: {
-//                         legend: {
-//                             display: false
-//                         }
-//                     }
-//                 }
-//             });
-//         }
-//     }
-
-//     summarizeBtn.addEventListener("click", () => {
-//         if (textToSummarize.value.trim() === "") {
-//             summarizedOutput.textContent = "Please paste some text to summarize.";
-//             return;
-//         }
-//         chrome.runtime.sendMessage({
-//             type: "SUMMARIZE_REQUEST",
-//             text: textToSummarize.value
-//         });
-//     });
-
-//     downloadLogsBtn.addEventListener("click", () => {
-//         chrome.storage.local.get("userLog", (data) => {
-//             const log = data.userLog;
-//             if (log) {
-//                 const logContent = `User Interaction Report
-// --------------------------------------
-// Time on Page: ${log.timeOnPage}s
-// Scroll Depth: ${log.scrollDepth.toFixed(1)}%
-// Hovers: ${log.hoverCount}
-// Clicks: ${log.clickCount}
-// Confusion Score: ${log.confusionScore}
-// --------------------------------------
-// This report was generated on ${new Date().toLocaleString()}.
-// `;
-//                 const blob = new Blob([logContent], { type: 'text/plain' });
-//                 const url = URL.createObjectURL(blob);
-//                 const a = document.createElement('a');
-//                 a.href = url;
-//                 a.download = `cognitive_load_logs_${Date.now()}.txt`;
-//                 document.body.appendChild(a);
-//                 a.click();
-//                 document.body.removeChild(a);
-//                 URL.revokeObjectURL(url);
-//             } else {
-//                 alert("No log data to download.");
-//             }
-//         });
-//     });
-    
-//     feedbackBtn.addEventListener("click", () => {
-//         const feedback = prompt("How easy was it to understand this page? (1-5)");
-//         if (feedback) {
-//             chrome.runtime.sendMessage({
-//                 type: "USER_FEEDBACK",
-//                 feedback: feedback
-//             });
-//         }
-//     });
-// });
-
-// popup.js
-
 document.addEventListener("DOMContentLoaded", () => {
-    // ========== EXISTING ELEMENTS ==========
+
+    /* ===============================
+       ELEMENT REFERENCES
+    =============================== */
+
     const timeOnPageEl = document.getElementById("time-on-page");
     const scrollDepthEl = document.getElementById("scroll-depth");
     const hoverCountEl = document.getElementById("hover-count");
     const clickCountEl = document.getElementById("click-count");
-    const confusionScoreEl = document.getElementById("confusion-score");
-    const helpMessageEl = document.getElementById("help-message");
-    const ctx = document.getElementById('myChart').getContext('2d');
-    let myChart;
 
-    const summarizeBtn = document.getElementById("process-summary-btn");
-    const downloadLogsBtn = document.getElementById("download-logs-btn");
-    const feedbackBtn = document.getElementById("feedback-btn");
-    
-    const textToSummarize = document.getElementById("text-to-summarize");
-    const summarizedOutput = document.getElementById("summarized-output");
-
-    // ========== NEW ML ELEMENTS ==========
     const mlScorePercentageEl = document.getElementById("ml-score-percentage");
     const mlLoadLevelEl = document.getElementById("ml-load-level");
     const mlStatusEl = document.getElementById("ml-status");
-    const mlScoreCircleEl = document.getElementById("ml-score-circle");
+
     const modelStatusEl = document.getElementById("model-status");
     const trainingSamplesEl = document.getElementById("training-samples");
-    
+
+    const strainEl = document.getElementById("strain-score");
+    const focusEl = document.getElementById("focus-score");
+    const clarityEl = document.getElementById("clarity-score");
+
+    const downloadLogsBtn = document.getElementById("download-logs-btn");
+    const feedbackBtn = document.getElementById("feedback-btn");
     const resetModelBtn = document.getElementById("reset-model-btn");
     const exportModelBtn = document.getElementById("export-model-btn");
-    const viewHistoryBtn = document.getElementById("view-history-btn");
+    const openSidebarBtn = document.getElementById("open-sidebar-btn");
 
-    // ========== INITIALIZE ==========
-    
-    // Display initial log data
-    chrome.storage.local.get("userLog", (data) => {
-        const log = data.userLog || { 
-            scrollDepth: 0, 
-            hoverCount: 0, 
-            clickCount: 0, 
-            timeOnPage: 0, 
-            confusionScore: 0,
-            mlCognitiveLoad: 0,
-            mlLoadLevel: 'unknown'
-        };
-        updatePopupUI(log);
-        updateChart(log);
-        updateMLDisplay(log);
-    });
+    const ctxElement = document.getElementById("activityChart");
 
-    // Get model info
-    chrome.runtime.sendMessage({ type: 'GET_MODEL_INFO' }, (response) => {
-        if (response) {
-            updateModelInfo(response);
+    let chartInstance = null;
+
+    /* ===============================
+       SIDEBAR TOGGLE
+    =============================== */
+
+    if (openSidebarBtn) {
+        openSidebarBtn.addEventListener("click", () => {
+            chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+                if (!tabs[0]) return;
+
+                chrome.tabs.sendMessage(tabs[0].id, {
+                    type: "TOGGLE_SIDEBAR"
+                });
+            });
+        });
+    }
+
+    /* ===============================
+       INITIAL LOAD
+    =============================== */
+
+    loadData();
+    loadModelInfo();
+
+    setInterval(loadData, 2000);
+
+    /* ===============================
+       FUNCTIONS
+    =============================== */
+
+    function formatPercent(value) {
+        if (value === undefined || value === null || isNaN(value)) {
+            return "—";
         }
-    });
 
-    // Get training feedback count
-    chrome.storage.local.get(['trainingFeedback'], (result) => {
-        const feedbackCount = result.trainingFeedback ? result.trainingFeedback.length : 0;
-        trainingSamplesEl.textContent = feedbackCount;
-    });
+        let num = Number(value);
 
-    // ========== AUTO-REFRESH ML SCORES ==========
-    
-    // Update ML scores every 2 seconds
-    setInterval(() => {
-        chrome.storage.local.get("userLog", (data) => {
-            if (data.userLog) {
-                updateMLDisplay(data.userLog);
-                updatePopupUI(data.userLog);
+        // If already 0–100 scale
+        if (num > 1) {
+            num = Math.min(Math.max(num, 0), 100);
+            return `${num.toFixed(0)}%`;
+        }
+
+        // If 0–1 scale
+        num = Math.min(Math.max(num, 0), 1);
+        return `${(num * 100).toFixed(0)}%`;
+    }
+
+    function loadData() {
+        chrome.storage.local.get(["userLog", "trainingFeedback"], (data) => {
+
+            const log = data.userLog || {
+                timeOnPage: 0,
+                scrollDepth: 0,
+                hoverCount: 0,
+                clickCount: 0,
+                mlCognitiveLoad: 0,
+                mlLoadLevel: "unknown",
+                strain: 0,
+                focus: 0,
+                clarity: 0,
+                lastMLUpdate: null
+            };
+
+            updateMetrics(log);
+            updateMLDisplay(log);
+            updateChart(log);
+
+            const feedbackCount = data.trainingFeedback ? data.trainingFeedback.length : 0;
+            if (trainingSamplesEl) {
+                trainingSamplesEl.textContent = feedbackCount;
             }
         });
-    }, 2000);
+    }
 
-    // ========== UPDATE FUNCTIONS ==========
+    function loadModelInfo() {
+        chrome.runtime.sendMessage({ type: "GET_MODEL_INFO" }, (response) => {
+            if (!response || !modelStatusEl) return;
 
-    function updatePopupUI(log) {
-        timeOnPageEl.textContent = `${log.timeOnPage}s`;
-        scrollDepthEl.textContent = `${log.scrollDepth.toFixed(1)}%`;
-        hoverCountEl.textContent = log.hoverCount;
-        clickCountEl.textContent = log.clickCount;
-        confusionScoreEl.textContent = log.confusionScore;
-        
-        if (log.confusionScore >= 2) {
-            helpMessageEl.style.display = 'block';
-            helpMessageEl.innerHTML = `<strong>Need help?</strong> It looks like you might be confused.`;
-        } else {
-            helpMessageEl.style.display = 'none';
-        }
+            if (response.modelLoaded) {
+                modelStatusEl.textContent = "✅ Loaded";
+                modelStatusEl.style.color = "#10b981";
+            } else {
+                modelStatusEl.textContent = "⏳ Loading...";
+                modelStatusEl.style.color = "#f59e0b";
+            }
+        });
+    }
+
+    function updateMetrics(log) {
+        if (timeOnPageEl) timeOnPageEl.textContent = `${log.timeOnPage}s`;
+        if (scrollDepthEl) scrollDepthEl.textContent = `${Number(log.scrollDepth).toFixed(1)}%`;
+        if (hoverCountEl) hoverCountEl.textContent = log.hoverCount;
+        if (clickCountEl) clickCountEl.textContent = log.clickCount;
     }
 
     function updateMLDisplay(log) {
-        const mlScore = log.mlCognitiveLoad || 0;
-        const mlLevel = log.mlLoadLevel || 'unknown';
-        
-        // Update score percentage
-        const percentage = (mlScore * 100).toFixed(0);
-        mlScorePercentageEl.textContent = `${percentage}%`;
-        
-        // Update load level text with emoji
-        let levelText = 'Unknown';
-        let levelEmoji = '❓';
-        
-        if (mlLevel === 'very_high') {
-            levelText = 'Very High';
-            levelEmoji = '🔴';
-            mlScoreCircleEl.className = 'score-circle very-high';
-        } else if (mlLevel === 'high') {
-            levelText = 'High';
-            levelEmoji = '🟠';
-            mlScoreCircleEl.className = 'score-circle high';
-        } else if (mlLevel === 'medium') {
-            levelText = 'Medium';
-            levelEmoji = '🟡';
-            mlScoreCircleEl.className = 'score-circle medium';
-        } else if (mlLevel === 'low') {
-            levelText = 'Low';
-            levelEmoji = '🟢';
-            mlScoreCircleEl.className = 'score-circle low';
-        } else {
-            mlScoreCircleEl.className = 'score-circle';
-        }
-        
-        mlLoadLevelEl.textContent = `${levelEmoji} ${levelText}`;
-        
-        // Update status
+        if (!mlScorePercentageEl || !mlLoadLevelEl || !mlStatusEl) return;
+
+        const score = log.mlCognitiveLoad || 0;
+        const level = log.mlLoadLevel || "unknown";
+
+        mlScorePercentageEl.textContent = `${(score * 100).toFixed(0)}%`;
+
+        const levelMap = {
+            very_high: "🔴 Very High",
+            high: "🟠 High",
+            medium: "🟡 Medium",
+            low: "🟢 Low",
+            unknown: "❓ Unknown"
+        };
+
+        mlLoadLevelEl.textContent = levelMap[level] || "❓ Unknown";
+
         if (log.lastMLUpdate) {
-            const timeSinceUpdate = Date.now() - log.lastMLUpdate;
-            if (timeSinceUpdate < 5000) {
-                mlStatusEl.textContent = '✅ Active';
-                mlStatusEl.style.color = '#10b981';
+            const diff = Date.now() - log.lastMLUpdate;
+
+            if (diff < 5000) {
+                mlStatusEl.textContent = "✅ Active";
+                mlStatusEl.style.color = "#10b981";
             } else {
-                mlStatusEl.textContent = '⏸️ Paused';
-                mlStatusEl.style.color = '#f59e0b';
+                mlStatusEl.textContent = "⏸️ Paused";
+                mlStatusEl.style.color = "#f59e0b";
             }
         } else {
-            mlStatusEl.textContent = '⏳ Waiting for data...';
-            mlStatusEl.style.color = '#6b7280';
+            mlStatusEl.textContent = "⏳ Waiting...";
+            mlStatusEl.style.color = "#6b7280";
         }
-    }
 
-    function updateModelInfo(info) {
-        if (info.modelLoaded) {
-            modelStatusEl.textContent = '✅ Loaded';
-            modelStatusEl.style.color = '#10b981';
-        } else {
-            modelStatusEl.textContent = '⏳ Loading...';
-            modelStatusEl.style.color = '#f59e0b';
-        }
-        
-        if (info.isTraining) {
-            modelStatusEl.textContent = '🎓 Training...';
-            modelStatusEl.style.color = '#667eea';
-        }
+        if (strainEl) strainEl.textContent = formatPercent(log.strain);
+        if (focusEl) focusEl.textContent = formatPercent(log.focus);
+        if (clarityEl) clarityEl.textContent = formatPercent(log.clarity);
     }
 
     function updateChart(log) {
-        const data = [log.timeOnPage, log.scrollDepth.toFixed(1), log.hoverCount, log.clickCount];
-        if (myChart) {
-            myChart.data.datasets[0].data = data;
-            myChart.update();
-        } else {
-            myChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: ['Time (s)', 'Scroll (%)', 'Hovers', 'Clicks'],
-                    datasets: [{
-                        label: 'User Activity',
-                        data: data,
-                        backgroundColor: [
-                            'rgba(52, 152, 219, 0.5)',
-                            'rgba(46, 204, 113, 0.5)',
-                            'rgba(241, 196, 15, 0.5)',
-                            'rgba(231, 76, 60, 0.5)'
-                        ],
-                        borderColor: [
-                            'rgba(52, 152, 219, 1)',
-                            'rgba(46, 204, 113, 1)',
-                            'rgba(241, 196, 15, 1)',
-                            'rgba(231, 76, 60, 1)'
-                        ],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    },
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    }
-                }
-            });
-        }
-    }
+        if (!ctxElement) return;
 
-    // ========== EVENT LISTENERS ==========
+        const ctx = ctxElement.getContext("2d");
 
-    // Listen for summarization response
-    chrome.runtime.onMessage.addListener((message) => {
-        if (message.type === "SUMMARIZE_RESPONSE") {
-            summarizedOutput.textContent = message.summary;
-        }
-        
-        if (message.type === "MODEL_TRAINED") {
-            modelStatusEl.textContent = '✅ Training Complete!';
-            modelStatusEl.style.color = '#10b981';
-            
-            // Update training samples count
-            chrome.storage.local.get(['trainingFeedback'], (result) => {
-                const feedbackCount = result.trainingFeedback ? result.trainingFeedback.length : 0;
-                trainingSamplesEl.textContent = feedbackCount;
-            });
-        }
-    });
+        const chartData = [
+            log.timeOnPage,
+            Number(log.scrollDepth),
+            log.hoverCount,
+            log.clickCount
+        ];
 
-    // Summarize button
-    summarizeBtn.addEventListener("click", () => {
-        if (textToSummarize.value.trim() === "") {
-            summarizedOutput.textContent = "Please paste some text to summarize.";
+        if (chartInstance) {
+            chartInstance.data.datasets[0].data = chartData;
+            chartInstance.update();
             return;
         }
-        summarizedOutput.textContent = "Processing...";
-        chrome.runtime.sendMessage({
-            type: "SUMMARIZE_REQUEST",
-            text: textToSummarize.value
+
+        chartInstance = new Chart(ctx, {
+            type: "bar",
+            data: {
+                labels: ["Time (s)", "Scroll (%)", "Hovers", "Clicks"],
+                datasets: [{
+                    data: chartData
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: { beginAtZero: true }
+                }
+            }
         });
-    });
+    }
 
-    // Download logs button
-    downloadLogsBtn.addEventListener("click", () => {
-        chrome.storage.local.get(["userLog", "trainingFeedback", "highLoadEvents"], (data) => {
-            const log = data.userLog;
-            const feedbackCount = data.trainingFeedback ? data.trainingFeedback.length : 0;
-            const highLoadCount = data.highLoadEvents ? data.highLoadEvents.length : 0;
-            
-            if (log) {
-                const logContent = `Cognitive Load Analysis Report
-======================================
+    /* ===============================
+       BUTTON EVENTS
+    =============================== */
 
-📊 TRADITIONAL METRICS
---------------------------------------
+    if (downloadLogsBtn) {
+        downloadLogsBtn.addEventListener("click", () => {
+            chrome.storage.local.get("userLog", (data) => {
+                if (!data.userLog) {
+                    alert("No log data available.");
+                    return;
+                }
+
+                const log = data.userLog;
+
+                const content = `
+Cognitive Load Report
+=====================
+
 Time on Page: ${log.timeOnPage}s
-Scroll Depth: ${log.scrollDepth.toFixed(1)}%
+Scroll Depth: ${log.scrollDepth}%
 Hovers: ${log.hoverCount}
 Clicks: ${log.clickCount}
-Confusion Score: ${log.confusionScore}
 
-🧠 ML COGNITIVE LOAD METRICS
---------------------------------------
-ML Cognitive Load: ${(log.mlCognitiveLoad * 100).toFixed(0)}%
-Load Level: ${log.mlLoadLevel}
-Last Update: ${log.lastMLUpdate ? new Date(log.lastMLUpdate).toLocaleString() : 'N/A'}
+ML Load: ${(log.mlCognitiveLoad * 100).toFixed(0)}%
+Level: ${log.mlLoadLevel}
 
-📈 MODEL STATISTICS
---------------------------------------
-Training Samples Collected: ${feedbackCount}
-High Load Events Detected: ${highLoadCount}
+Generated: ${new Date().toLocaleString()}
+                `;
 
-======================================
-Report Generated: ${new Date().toLocaleString()}
-URL: ${log.url || 'N/A'}
-======================================
-`;
-                const blob = new Blob([logContent], { type: 'text/plain' });
+                const blob = new Blob([content], { type: "text/plain" });
                 const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
+
+                const a = document.createElement("a");
                 a.href = url;
-                a.download = `cognitive_load_report_${Date.now()}.txt`;
-                document.body.appendChild(a);
+                a.download = `cognitive_report_${Date.now()}.txt`;
                 a.click();
-                document.body.removeChild(a);
+
                 URL.revokeObjectURL(url);
-            } else {
-                alert("No log data to download.");
-            }
-        });
-    });
-    
-    // Feedback button
-    feedbackBtn.addEventListener("click", () => {
-        const feedback = prompt("How easy was it to understand this page?\n\n1 = Very Easy\n2 = Easy\n3 = Medium\n4 = Hard\n5 = Very Hard");
-        
-        if (feedback) {
-            const numFeedback = parseInt(feedback);
-            if (numFeedback >= 1 && numFeedback <= 5) {
-                // Convert 1-5 scale to 0-1 scale for ML model
-                const normalizedFeedback = (numFeedback - 1) / 4;
-                
-                chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-                    if (tabs[0]) {
-                        chrome.tabs.sendMessage(tabs[0].id, {
-                            type: "PROVIDE_FEEDBACK",
-                            difficulty: normalizedFeedback < 0.33 ? 'easy' : normalizedFeedback < 0.66 ? 'medium' : 'hard'
-                        });
-                    }
-                });
-                
-                alert("Thank you for your feedback! This helps improve the ML model.");
-            } else {
-                alert("Please enter a number between 1 and 5.");
-            }
-        }
-    });
-
-    // Reset ML Model button
-    resetModelBtn.addEventListener("click", () => {
-        const confirmed = confirm(
-            "⚠️ WARNING: This will reset the ML model and delete all training data.\n\n" +
-            "The model will start learning from scratch.\n\n" +
-            "Are you sure you want to continue?"
-        );
-        
-        if (confirmed) {
-            resetModelBtn.textContent = "Resetting...";
-            resetModelBtn.disabled = true;
-            
-            chrome.runtime.sendMessage({ type: 'RESET_ML_MODEL' }, (response) => {
-                if (response && response.success) {
-                    alert("✅ ML Model has been reset successfully!");
-                    modelStatusEl.textContent = '✅ Reset Complete';
-                    trainingSamplesEl.textContent = '0';
-                } else {
-                    alert("❌ Failed to reset model. Please try again.");
-                }
-                
-                resetModelBtn.textContent = "🔄 Reset ML Model";
-                resetModelBtn.disabled = false;
             });
-        }
-    });
+        });
+    }
 
-    // Export Model button
-    exportModelBtn.addEventListener("click", () => {
-        exportModelBtn.textContent = "Exporting...";
-        exportModelBtn.disabled = true;
-        
-        chrome.runtime.sendMessage({ type: 'EXPORT_ML_MODEL' }, (response) => {
-            if (response && response.success) {
-                alert("✅ Model exported to Downloads folder!");
-            } else {
-                alert("❌ Failed to export model. Make sure the model is trained first.");
-            }
-            
-            exportModelBtn.textContent = "Export Model";
-            exportModelBtn.disabled = false;
+
+// if (feedbackBtn) {
+//     feedbackBtn.addEventListener("click", () => {
+
+//         const feedback = prompt("Rate difficulty (1-5):");
+//         if (!feedback) return;
+
+//         const value = parseInt(feedback);
+
+//         if (isNaN(value) || value < 1 || value > 5) {
+//             alert("Enter number between 1 and 5");
+//             return;
+//         }
+
+//         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+//             if (!tabs[0]) return;
+
+//             chrome.tabs.sendMessage(tabs[0].id, {
+//                 type: "PROVIDE_FEEDBACK",
+//                 rating: value
+//             });
+//         });
+
+//     });
+// }
+
+if (feedbackBtn) {
+    feedbackBtn.addEventListener("click", () => {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (!tabs[0]) return;
+
+            chrome.tabs.sendMessage(tabs[0].id, {
+                type: "TRIGGER_FEEDBACK"
+            });
         });
     });
+}
 
-    // View History button
-    viewHistoryBtn.addEventListener("click", () => {
-        chrome.storage.local.get(['highLoadEvents', 'trainingFeedback'], (data) => {
-            const events = data.highLoadEvents || [];
-            const feedback = data.trainingFeedback || [];
-            
-            let historyHTML = `
-                <div style="padding: 20px; font-family: sans-serif;">
-                    <h2>📊 Cognitive Load History</h2>
-                    
-                    <h3>🔴 High Load Events (${events.length})</h3>
-                    <div style="max-height: 200px; overflow-y: auto; background: #f5f5f5; padding: 10px; border-radius: 5px;">
-            `;
-            
-            if (events.length > 0) {
-                events.slice(-10).reverse().forEach(event => {
-                    historyHTML += `
-                        <div style="margin-bottom: 10px; padding: 8px; background: white; border-radius: 4px;">
-                            <strong>${(event.score * 100).toFixed(0)}%</strong> - ${event.level}<br>
-                            <small>${new Date(event.timestamp).toLocaleString()}</small><br>
-                            <small style="color: #666;">${event.url}</small>
-                        </div>
-                    `;
-                });
-            } else {
-                historyHTML += '<p>No high load events recorded yet.</p>';
-            }
-            
-            historyHTML += `
-                    </div>
-                    
-                    <h3 style="margin-top: 20px;">💬 Training Feedback (${feedback.length})</h3>
-                    <div style="max-height: 200px; overflow-y: auto; background: #f5f5f5; padding: 10px; border-radius: 5px;">
-            `;
-            
-            if (feedback.length > 0) {
-                feedback.slice(-10).reverse().forEach(item => {
-                    const difficultyText = item.label === 0 ? 'Easy' : item.label === 0.5 ? 'Medium' : 'Hard';
-                    historyHTML += `
-                        <div style="margin-bottom: 10px; padding: 8px; background: white; border-radius: 4px;">
-                            <strong>${difficultyText}</strong><br>
-                            <small>${new Date(item.timestamp).toLocaleString()}</small>
-                        </div>
-                    `;
-                });
-            } else {
-                historyHTML += '<p>No feedback provided yet. Press Ctrl+Shift+F on any page to provide feedback.</p>';
-            }
-            
-            historyHTML += `
-                    </div>
-                </div>
-            `;
-            
-            // Create a new window with history
-            const historyWindow = window.open('', 'History', 'width=600,height=600');
-            historyWindow.document.write(historyHTML);
-            historyWindow.document.title = 'Cognitive Load History';
+    if (resetModelBtn) {
+        resetModelBtn.addEventListener("click", () => {
+            chrome.runtime.sendMessage({ type: "RESET_ML_MODEL" });
         });
-    });
+    }
+
+    if (exportModelBtn) {
+        exportModelBtn.addEventListener("click", () => {
+            chrome.runtime.sendMessage({ type: "EXPORT_ML_MODEL" });
+        });
+    }
+
 });

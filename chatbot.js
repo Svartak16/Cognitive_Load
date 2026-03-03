@@ -17,7 +17,7 @@
         return;
     }
 
-    const GEMINI_API_KEY = "AIzaSyApR1LKG888Z-apaqfgVyteeyy-OAOckS0";
+    const GEMINI_API_KEY = "AIzaSyBFO84iL6c5Qc6lXHk7dhcV2BoemHHpW48";
 
     // Create chatbot container dynamically
     const chatbotContainer = document.createElement("div");
