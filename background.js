@@ -494,7 +494,7 @@ function setStorageValue(key, value) {
 }
 
 // ---------- GEMINI AI ANALYSIS ----------
-const GEMINI_API_KEY = "AIzaSyBdRVYI7O_PzsA2uZYcEXsWZvDE0lrM378";
+const GEMINI_API_KEY = "";
 
 async function analyzeWithGemini(dataUrl, tabId) {
     // STEP 1: Cooldown Check (Rate Limiting)
