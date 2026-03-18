@@ -76,10 +76,11 @@ let modelReady = false;
 // Overlay + Capture + Gemini
 // =========================
 // NOTE: Do NOT hardcode API keys in source control.
-// Store it at `chrome.storage.local.set({ geminiApiKey: "..." })` from your UI.
+// If you need Gemini, call a backend proxy that keeps the key server-side.
 const AUDIT_REPORT_STORAGE_KEY = 'auditReport';
 const LAST_GEMINI_CALL_STORAGE_KEY = 'lastGeminiCall';
 const GEMINI_COOLDOWN_MS = 60_000; // 60 seconds
+const GEMINI_PROXY_URL_STORAGE_KEY = 'geminiProxyUrl';
 
 let auditReport = [];
 
@@ -250,6 +251,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 });
             }
         });
+    }
+
+    // Chatbot requests AI text completion via backend proxy.
+    if (message.type === 'GEMINI_CHAT') {
+        (async () => {
+            const prompt = String(message?.prompt || '');
+            if (!prompt) return sendResponse({ text: '' });
+
+            const data = await callGeminiProxy({
+                kind: 'text',
+                prompt
+            });
+
+            if (data?.error) return sendResponse({ error: 'AI_UNAVAILABLE' });
+            return sendResponse({ text: data?.text || '' });
+        })();
+        return true;
     }
     
     // ========== NEW ML FUNCTIONALITY ==========
@@ -493,8 +511,47 @@ function setStorageValue(key, value) {
     });
 }
 
-// ---------- GEMINI AI ANALYSIS ----------
-const GEMINI_API_KEY = "";
+// ---------- GEMINI AI (via backend proxy) ----------
+async function getGeminiProxyUrl() {
+    // Prefer enterprise-managed config if available; fall back to local.
+    const managed = await new Promise((resolve) => {
+        try {
+            if (!chrome?.storage?.managed) return resolve(null);
+            chrome.storage.managed.get([GEMINI_PROXY_URL_STORAGE_KEY], (result) => {
+                resolve(result?.[GEMINI_PROXY_URL_STORAGE_KEY] || null);
+            });
+        } catch {
+            resolve(null);
+        }
+    });
+    if (managed) return managed;
+    return (await getStorageValue(GEMINI_PROXY_URL_STORAGE_KEY)) || '';
+}
+
+async function callGeminiProxy(payload) {
+    const proxyUrl = await getGeminiProxyUrl();
+    if (!proxyUrl) return { error: 'AI_UNAVAILABLE' };
+
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 30_000);
+    try {
+        const res = await fetch(proxyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+            return { error: data?.error || `HTTP_${res.status}` };
+        }
+        return data;
+    } catch (e) {
+        return { error: e?.name === 'AbortError' ? 'TIMEOUT' : (e?.message || 'NETWORK_ERROR') };
+    } finally {
+        clearTimeout(t);
+    }
+}
 
 async function analyzeWithGemini(dataUrl, tabId) {
     // STEP 1: Cooldown Check (Rate Limiting)
@@ -519,81 +576,53 @@ async function analyzeWithGemini(dataUrl, tabId) {
     }
 
     try {
-        const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`,
-            {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            { text:
-                                `You are a visual analysis assistant.
-\n
-                            1. Identify the image type:
-                            - Text/Notes
-                            - Question or Problem
-                            - UI/App Screenshot
-                            - Chart/Graph/Table
-                            - Other
-\n
-                            2. Summarize the image briefly in simple language.
-                            Do not assume missing information.
-\n
-                            3. If the image contains a question or problem:
-                            - Do not give the final answer unless asked
-                            - Explain the solving approach step-by-step
-                            - Mention key concepts or formulas
-                            - Prefer the best approach if multiple exist
-\n
-                            4. If it is not a problem:
-                            - Explain the main idea
-                            - Highlight important elements
-\n
-                            Rules:
-                            - Say if the image is unclear
-                            - Do not hallucinate
-                            - Keep it beginner-friendly `
-                                                        },
-                            { inline_data: { mime_type: "image/png", data: base64 } }
-                        ]
-                    }]
-                })
-            }
-        );
+        const prompt = `You are a visual analysis assistant.
 
-        const data = await response.json();
+1. Identify the image type:
+- Text/Notes
+- Question or Problem
+- UI/App Screenshot
+- Chart/Graph/Table
+- Other
 
-        // STEP 2: Proper Error Handling
+2. Summarize the image briefly in simple language.
+Do not assume missing information.
+
+3. If the image contains a question or problem:
+- Do not give the final answer unless asked
+- Explain the solving approach step-by-step
+- Mention key concepts or formulas
+- Prefer the best approach if multiple exist
+
+4. If it is not a problem:
+- Explain the main idea
+- Highlight important elements
+
+Rules:
+- Say if the image is unclear
+- Do not hallucinate
+- Keep it beginner-friendly`;
+
+        const data = await callGeminiProxy({
+            kind: 'vision',
+            mimeType: 'image/png',
+            imageBase64: base64,
+            prompt
+        });
+
         if (data?.error) {
-            const msg = data.error?.message || 'Unknown API error';
-            if (String(msg).toLowerCase().includes("quota")) {
-                chrome.tabs.sendMessage(tabId, {
-                    action: "AI_RESULT",
-                    text: "Gemini API quota exceeded. Please wait or upgrade your API plan."
-                });
-            } else {
-                chrome.tabs.sendMessage(tabId, {
-                    action: "AI_RESULT",
-                    text: `API Error: ${msg}`
-                });
-            }
+            chrome.tabs.sendMessage(tabId, { action: "AI_RESULT", text: "AI is temporarily unavailable." });
             return;
         }
 
-        const text = data?.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) {
-            chrome.tabs.sendMessage(tabId, { action: "AI_RESULT", text });
-        } else {
-            chrome.tabs.sendMessage(tabId, {
-                action: "AI_RESULT",
-                text: "No meaningful response generated by AI."
-            });
-        }
+        chrome.tabs.sendMessage(tabId, {
+            action: "AI_RESULT",
+            text: data?.text || "AI is temporarily unavailable."
+        });
     } catch (e) {
         chrome.tabs.sendMessage(tabId, {
             action: "AI_RESULT",
-            text: "Network or server error. Please try again later."
+            text: "AI is temporarily unavailable."
         });
         console.error("Gemini Fetch Error:", e);
     }

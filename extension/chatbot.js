@@ -17,8 +17,6 @@
         return;
     }
 
-    const GEMINI_API_KEY = "";
-
     // Create chatbot container dynamically
     const chatbotContainer = document.createElement("div");
     chatbotContainer.innerHTML = `
@@ -152,7 +150,7 @@
         chatBody.scrollTop = chatBody.scrollHeight;
     }
 
-    // Gemini API Call with retry logic, using key from storage
+    // Gemini request via background proxy (no client-side API key)
     async function getGeminiReply(userMsg, retryCount = 0) {
         const maxRetries = 3;
         const retryDelay = Math.pow(2, retryCount) * 1000;
@@ -167,46 +165,32 @@
                 userMsg +
                 "\"\nRespond clearly and naturally.";
 
-            const response = await fetch(
-                'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' +
-                encodeURIComponent(GEMINI_API_KEY),
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        contents: [{ role: "user", parts: [{ text: contextPrompt }] }]
-                    })
+            const data = await new Promise((resolve) => {
+                try {
+                    chrome.runtime.sendMessage({ type: 'GEMINI_CHAT', prompt: contextPrompt }, (resp) => {
+                        resolve(resp || {});
+                    });
+                } catch (e) {
+                    resolve({ error: e?.message || 'SEND_FAILED' });
                 }
-            );
+            });
 
-            const data = await response.json();
+            if (data?.text) return data.text;
 
-            if (data?.candidates?.length) {
-                return data.candidates[0].content.parts[0].text;
-            } else if (data?.error) {
-                console.error("API error:", data.error.message);
-
-                if (data.error.message.includes("overloaded") || data.error.message.includes("quota")) {
-                    if (retryCount < maxRetries) {
-                        return '🔄 Server is busy, retrying in ' +
-                            (retryDelay / 1000) +
-                            's... (attempt ' +
-                            (retryCount + 1) +
-                            '/' +
-                            maxRetries +
-                            ')';
-                    } else {
-                        return "😔 The AI service is currently overloaded. Please try again in a few minutes. You can also try asking a simpler question.";
-                    }
-                } else if (data.error.message.includes("API key")) {
-                    return "🔑 There's an issue with the API configuration. Please check the setup.";
-                } else {
-                    return "⚠️ API Error: " + data.error.message;
+            if (data?.error) {
+                if (retryCount < maxRetries) {
+                    return '🔄 Server is busy, retrying in ' +
+                        (retryDelay / 1000) +
+                        's... (attempt ' +
+                        (retryCount + 1) +
+                        '/' +
+                        maxRetries +
+                        ')';
                 }
-            } else {
-                console.warn("Unexpected response:", data);
-                return "Sorry, I couldn't process that. Please try rephrasing your question.";
+                return "Sorry — the AI assistant is temporarily unavailable.";
             }
+
+            return "Sorry — the AI assistant is temporarily unavailable.";
 
         } catch (err) {
             console.error("Chatbot Fetch Error:", err);

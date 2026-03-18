@@ -10,8 +10,8 @@
 
 class CognitiveLoadMLModel {
   constructor() {
-    // 21 input features (11 base + 10 interactions) + bias
-    this.featureCount = 21;
+    // Feature vector length expected by the current model version.
+    this.featureCount = 46;
     this.weights = new Array(this.featureCount).fill(0);
     this.bias = 0;
     this.isTraining = false;
@@ -30,6 +30,19 @@ class CognitiveLoadMLModel {
     this.learningRate = this.initialLearningRate;
     this.lossHistory = [];
     this.trainingCount = 0;
+  }
+
+  normalizeFeatures(features) {
+    if (!Array.isArray(features)) return null;
+
+    // Legacy support:
+    // - 11 features (base only)
+    // - 21 features (11 base + 10 interactions)
+    // - current: 46 features
+    const out = new Array(this.featureCount).fill(0);
+    const copyLen = Math.min(features.length, this.featureCount);
+    for (let i = 0; i < copyLen; i++) out[i] = features[i];
+    return out;
   }
   
   async initialize() {
@@ -92,39 +105,29 @@ class CognitiveLoadMLModel {
   }
   
   async predict(features) {
-    if (!Array.isArray(features)) {
+    const normalized = this.normalizeFeatures(features);
+    if (!normalized) {
       console.error('Invalid features: not an array');
       return 0.5;
     }
-    
-    // Support both old 11-feature and new 21-feature formats
-    if (features.length !== this.featureCount && features.length !== 11) {
+
+    if (features.length !== this.featureCount) {
       console.warn(`Expected ${this.featureCount} features, got ${features.length}. Padding/truncating.`);
-      // Pad or truncate to match expected size
-      const paddedFeatures = new Array(this.featureCount).fill(0);
-      for (let i = 0; i < Math.min(features.length, this.featureCount); i++) {
-        paddedFeatures[i] = features[i];
-      }
-      features = paddedFeatures;
     }
-    
-    // If old 11-feature format, pad with zeros for interactions
-    if (features.length === 11) {
-      features = [...features, ...new Array(10).fill(0)];
-    }
-    
-    const z = features.reduce((sum, f, i) => sum + f * this.weights[i], this.bias);
+
+    const z = normalized.reduce((sum, f, i) => sum + f * this.weights[i], this.bias);
     const score = 1 / (1 + Math.exp(-z));
     return Math.max(0, Math.min(1, score)); // Clamp to [0, 1]
   }
   
   // Incremental/online learning - update model immediately with new sample
   async updateIncremental(features, label) {
-    if (!Array.isArray(features) || features.length !== this.featureCount) {
+    const normalized = this.normalizeFeatures(features);
+    if (!normalized) {
       return;
     }
     
-    const pred = await this.predict(features);
+    const pred = await this.predict(normalized);
     const error = pred - label;
     
     // Adaptive learning rate (decay over time)
@@ -136,7 +139,7 @@ class CognitiveLoadMLModel {
     // Online gradient descent with L2 regularization
     for (let i = 0; i < this.weights.length; i++) {
       // Gradient: error * feature[i] + L2 regularization term
-      const gradient = error * features[i] + this.l2Lambda * this.weights[i];
+      const gradient = error * normalized[i] + this.l2Lambda * this.weights[i];
       this.weights[i] -= adaptiveLR * gradient;
     }
     this.bias -= adaptiveLR * error;
@@ -152,19 +155,16 @@ class CognitiveLoadMLModel {
   // Collect training data with user feedback
   collectTrainingData(features, userFeedback) {
     // userFeedback: 0 (easy), 0.5 (medium), 1 (hard)
-    
-    // Ensure features are in correct format (21 features)
-    if (features.length === 11) {
-      // Old format - pad with zeros (interactions will be computed if needed)
-      features = [...features, ...new Array(10).fill(0)];
-    }
+
+    const normalized = this.normalizeFeatures(features);
+    if (!normalized) return;
     
     // Immediate incremental update (online learning)
-    this.updateIncremental(features, userFeedback);
+    this.updateIncremental(normalized, userFeedback);
     
     // Also store for potential batch training
     this.trainingData.push({
-      features: features,
+      features: normalized,
       label: userFeedback,
       timestamp: Date.now()
     });
