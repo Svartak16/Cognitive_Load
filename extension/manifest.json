@@ -9,7 +9,7 @@
     "activeTab",
     "scripting",
     "notifications",
-    "downloads"
+    "downloads","offscreen"
   ],
   "background": {
     "service_worker": "background.js"
@@ -45,8 +45,11 @@
   "host_permissions": ["<all_urls>"],
   "web_accessible_resources": [
     {
-      "resources": ["lib/tf.min.js"],
+      "resources": ["lib/tf.min.js","phishing_model.onnx", "ort.min.js"],
       "matches": ["<all_urls>"]
     }
-  ]
+  ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
 }

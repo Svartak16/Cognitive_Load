@@ -295,3 +295,142 @@ if (feedbackBtn) {
     }
 
 });
+// ── Phishing Detection Result ─────────────────────────────────
+function renderPhishingResult() {
+    chrome.storage.local.get("lastScan", ({ lastScan }) => {
+        const box = document.getElementById("phishing-result");
+        if (!box) return;
+
+        if (!lastScan) {
+            box.innerHTML = `
+                <div style="font-size:12px; color:rgba(229,231,235,0.5); text-align:center;">
+                    Visit a page to scan it
+                </div>`;
+            return;
+        }
+
+        // Dark-theme colors matching your UI
+        const configs = {
+            SAFE: {
+                bg:     "rgba(16,185,129,0.12)",
+                border: "rgba(16,185,129,0.35)",
+                badge:  "rgba(16,185,129,0.25)",
+                text:   "#34d399",
+                icon:   "✅",
+            },
+            SUSPICIOUS: {
+                bg:     "rgba(245,158,11,0.12)",
+                border: "rgba(245,158,11,0.35)",
+                badge:  "rgba(245,158,11,0.25)",
+                text:   "#fbbf24",
+                icon:   "⚠️",
+            },
+            MALICIOUS: {
+                bg:     "rgba(239,68,68,0.12)",
+                border: "rgba(239,68,68,0.35)",
+                badge:  "rgba(239,68,68,0.25)",
+                text:   "#f87171",
+                icon:   "🚨",
+            },
+        };
+
+        const c = configs[lastScan.decision] || configs.SAFE;
+
+        box.style.background = c.bg;
+        box.style.border     = `1px solid ${c.border}`;
+
+        // Shorten URL for display
+        let displayUrl = lastScan.url || "";
+        try {
+            const u = new URL(displayUrl);
+            displayUrl = u.hostname;
+        } catch(e) {}
+
+        box.innerHTML = `
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+                <div style="display:flex; align-items:center; gap:8px;">
+                    <span style="font-size:20px;">${c.icon}</span>
+                    <div>
+                        <div style="font-size:15px; font-weight:800; color:${c.text};">
+                            ${lastScan.decision}
+                        </div>
+                        <div style="font-size:10px; color:rgba(229,231,235,0.5); margin-top:1px;">
+                            ${displayUrl}
+                        </div>
+                    </div>
+                </div>
+                <div style="
+                    font-size:11px; font-weight:700;
+                    padding:4px 10px; border-radius:20px;
+                    background:${c.badge}; color:${c.text};">
+                    ${lastScan.recommended_action}
+                </div>
+            </div>
+
+            <div style="font-size:11px; color:rgba(229,231,235,0.75); margin-bottom:8px; line-height:1.5;">
+                ${lastScan.reason || "No signals detected"}
+            </div>
+
+            <div style="display:flex; gap:8px;">
+                <div style="
+                    flex:1; text-align:center; padding:6px;
+                    background:rgba(255,255,255,0.05);
+                    border-radius:8px; border:1px solid rgba(148,163,184,0.15);">
+                    <div style="font-size:16px; font-weight:800;
+                         background:linear-gradient(90deg,#60a5fa,#a78bfa);
+                         -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+                        ${lastScan.confidence}%
+                    </div>
+                    <div style="font-size:10px; color:rgba(229,231,235,0.5); text-transform:uppercase; letter-spacing:0.5px;">
+                        Confidence
+                    </div>
+                </div>
+                <div style="
+                    flex:1; text-align:center; padding:6px;
+                    background:rgba(255,255,255,0.05);
+                    border-radius:8px; border:1px solid rgba(148,163,184,0.15);">
+                    <div style="font-size:16px; font-weight:800;
+                         background:linear-gradient(90deg,#60a5fa,#a78bfa);
+                         -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+                        ${Math.round((lastScan.phishing_probability || 0) * 100)}%
+                    </div>
+                    <div style="font-size:10px; color:rgba(229,231,235,0.5); text-transform:uppercase; letter-spacing:0.5px;">
+                        Phish Prob
+                    </div>
+                </div>
+                <div style="
+                    flex:1; text-align:center; padding:6px;
+                    background:rgba(255,255,255,0.05);
+                    border-radius:8px; border:1px solid rgba(148,163,184,0.15);">
+                    <div style="font-size:16px; font-weight:800;
+                         background:linear-gradient(90deg,#60a5fa,#a78bfa);
+                         -webkit-background-clip:text; -webkit-text-fill-color:transparent;">
+                        ${lastScan.risk_score || 0}
+                    </div>
+                    <div style="font-size:10px; color:rgba(229,231,235,0.5); text-transform:uppercase; letter-spacing:0.5px;">
+                        Risk Score
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+}
+
+// Run on popup open
+renderPhishingResult();
+
+// Auto-refresh every 3 seconds in case a scan just completed
+setInterval(renderPhishingResult, 3000);
+```
+
+---
+
+After these changes, your popup will look like this for each state:
+// ```
+// 🛡️ PHISHING DETECTION
+// ┌─────────────────────────────────────┐  ← green/amber/red border
+// │ ✅ SAFE                    [ALLOW]  │
+// │ trusted domain — whitelisted        │
+// │  Confidence  │  Phish Prob  │ Risk  │
+// │    99%       │     0%       │   0   │
+// └─────────────────────────────────────┘
