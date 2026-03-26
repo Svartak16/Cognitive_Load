@@ -17,8 +17,11 @@
         return;
     }
 
+<<<<<<< HEAD
     // const GEMINI_API_KEY = "AIzaSyBSRsLMrh-XkMxz800SLNZ13ciKM3AuOZI";
 
+=======
+>>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
     // Create chatbot container dynamically
     const chatbotContainer = document.createElement("div");
     chatbotContainer.innerHTML = `
@@ -152,7 +155,7 @@
         chatBody.scrollTop = chatBody.scrollHeight;
     }
 
-    // Gemini API Call with retry logic, using key from storage
+    // Gemini request via background proxy (no client-side API key)
     async function getGeminiReply(userMsg, retryCount = 0) {
         const maxRetries = 3;
         const retryDelay = Math.pow(2, retryCount) * 1000;
@@ -167,6 +170,7 @@
                 userMsg +
                 "\"\nRespond clearly and naturally.";
 
+<<<<<<< HEAD
             const response = await fetch(
                 'http://localhost:8787/gemini',
                 {
@@ -175,11 +179,21 @@
                     body: JSON.stringify({
                         prompt: contextPrompt
                     })
+=======
+            const data = await new Promise((resolve) => {
+                try {
+                    chrome.runtime.sendMessage({ type: 'GEMINI_CHAT', prompt: contextPrompt }, (resp) => {
+                        resolve(resp || {});
+                    });
+                } catch (e) {
+                    resolve({ error: e?.message || 'SEND_FAILED' });
+>>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
                 }
-            );
+            });
 
-            const data = await response.json();
+            if (data?.text) return data.text;
 
+<<<<<<< HEAD
             if (response.ok) {
                 return data.text;
             } else {
@@ -202,7 +216,22 @@
                 } else {
                     return "⚠️ API Error: " + data.error;
                 }
+=======
+            if (data?.error) {
+                if (retryCount < maxRetries) {
+                    return '🔄 Server is busy, retrying in ' +
+                        (retryDelay / 1000) +
+                        's... (attempt ' +
+                        (retryCount + 1) +
+                        '/' +
+                        maxRetries +
+                        ')';
+                }
+                return "Sorry — the AI assistant is temporarily unavailable.";
+>>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
             }
+
+            return "Sorry — the AI assistant is temporarily unavailable.";
 
         } catch (err) {
             console.error("Chatbot Fetch Error:", err);
