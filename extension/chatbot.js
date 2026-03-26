@@ -17,11 +17,8 @@
         return;
     }
 
-<<<<<<< HEAD
-    // const GEMINI_API_KEY = "AIzaSyBSRsLMrh-XkMxz800SLNZ13ciKM3AuOZI";
+  
 
-=======
->>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
     // Create chatbot container dynamically
     const chatbotContainer = document.createElement("div");
     chatbotContainer.innerHTML = `
@@ -170,54 +167,25 @@
                 userMsg +
                 "\"\nRespond clearly and naturally.";
 
-<<<<<<< HEAD
-            const response = await fetch(
-                'http://localhost:8787/gemini',
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({
-                        prompt: contextPrompt
-                    })
-=======
             const data = await new Promise((resolve) => {
                 try {
                     chrome.runtime.sendMessage({ type: 'GEMINI_CHAT', prompt: contextPrompt }, (resp) => {
+                        if (chrome.runtime.lastError) {
+                            resolve({ error: chrome.runtime.lastError.message || 'SEND_FAILED' });
+                            return;
+                        }
                         resolve(resp || {});
                     });
                 } catch (e) {
                     resolve({ error: e?.message || 'SEND_FAILED' });
->>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
                 }
             });
 
             if (data?.text) return data.text;
 
-<<<<<<< HEAD
-            if (response.ok) {
-                return data.text;
-            } else {
-                console.error("API error:", data.error);
-
-                if (data.error.includes("overloaded") || data.error.includes("quota")) {
-                    if (retryCount < maxRetries) {
-                        return '🔄 Server is busy, retrying in ' +
-                            (retryDelay / 1000) +
-                            's... (attempt ' +
-                            (retryCount + 1) +
-                            '/' +
-                            maxRetries +
-                            ')';
-                    } else {
-                        return "😔 The AI service is currently overloaded. Please try again in a few minutes. You can also try asking a simpler question.";
-                    }
-                } else if (data.error.includes("API key")) {
-                    return "🔑 There's an issue with the API configuration. Please check the setup.";
-                } else {
-                    return "⚠️ API Error: " + data.error;
-                }
-=======
             if (data?.error) {
+                console.error("AI assistant error:", data.error);
+
                 if (retryCount < maxRetries) {
                     return '🔄 Server is busy, retrying in ' +
                         (retryDelay / 1000) +
@@ -227,8 +195,8 @@
                         maxRetries +
                         ')';
                 }
+
                 return "Sorry — the AI assistant is temporarily unavailable.";
->>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
             }
 
             return "Sorry — the AI assistant is temporarily unavailable.";

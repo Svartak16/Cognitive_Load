@@ -434,8 +434,17 @@ const SUSPICIOUS_SUBDOMAIN_KEYWORDS = [
   "validate", "auth", "checkout", "payment",
 ];
 
-const rootDomain = parts.slice(-2).join(".");
-const subdomainStr = parts.slice(0, -2).join(".").toLowerCase();
+let rootDomain = "";
+let subdomainStr = "";
+try {
+  const parsed = new URL(url.startsWith("http") ? url : "https://" + url);
+  const hostname = (parsed.hostname || "").replace("www.", "");
+  const parts = hostname.split(".").filter(Boolean);
+  rootDomain = parts.length >= 2 ? parts.slice(-2).join(".") : hostname;
+  subdomainStr = parts.length > 2 ? parts.slice(0, -2).join(".").toLowerCase() : "";
+} catch (e) {
+  // Keep defaults when the URL cannot be parsed.
+}
 
 const isPhishingPlatform = PHISHING_HOSTING_PLATFORMS.has(rootDomain);
 const subdomainHasLoginKeyword = SUSPICIOUS_SUBDOMAIN_KEYWORDS.some(
@@ -446,10 +455,10 @@ const subdomainHasBrand = KNOWN_BRANDS.some(
 );
 
 // High risk: phishing keyword in subdomain on hosting platform
-const platformPhishing = int(isPhishingPlatform && (subdomainHasLoginKeyword || subdomainHasBrand));
+const platformPhishing = Number(isPhishingPlatform && (subdomainHasLoginKeyword || subdomainHasBrand));
 
 // Medium risk: any subdomain with brand + login keyword combo
-const subdomainBrandLogin = int(subdomainHasBrand && subdomainHasLoginKeyword);
+const subdomainBrandLogin = Number(subdomainHasBrand && subdomainHasLoginKeyword);
 
   return {
     decision:             finalLabel,

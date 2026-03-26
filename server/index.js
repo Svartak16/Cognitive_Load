@@ -8,10 +8,7 @@ const PORT = Number(process.env.PORT || 8787);
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || '');
 const GEMINI_MODEL = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
 const CORS_ORIGIN = process.env.CORS_ORIGIN ? String(process.env.CORS_ORIGIN) : '*';
-<<<<<<< HEAD
 const SAFE_BROWSING_API_KEY = String(process.env.SAFE_BROWSING_API_KEY || '');
-=======
->>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
 
 if (!GEMINI_API_KEY) {
   // eslint-disable-next-line no-console
@@ -83,7 +80,6 @@ app.post('/gemini', async (req, res) => {
   }
 });
 
-<<<<<<< HEAD
 app.post('/safebrowsing', async (req, res) => {
   if (!SAFE_BROWSING_API_KEY) {
     return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
@@ -126,11 +122,7 @@ app.post('/safebrowsing', async (req, res) => {
     return res.status(502).json({ error: e?.message || 'UPSTREAM_ERROR' });
   }
 });
-
-=======
->>>>>>> 8ba0451fdc91ee9feb0233d285c4feb9fb509b4b
 app.listen(PORT, () => {
   // eslint-disable-next-line no-console
   console.log(`[gemini-proxy] listening on http://localhost:${PORT}`);
 });
-
