@@ -1,87 +1,29 @@
-<div class="cognitive-audit-container" style="background-color: {{ block.settings.bg_color }}; color: {{ block.settings.text_color }};">
-  <div class="audit-header">
-    <span class="live-indicator">● LIVE ANALYSIS</span>
-    <h3>{{ block.settings.title }}</h3>
-  </div>
+# 🧠 Cognitive Audit Pro: Real-Time UI Adaptation Engine
 
-  <div class="analysis-grid">
-    <div class="analysis-item">
-      <div class="analysis-icon">⏱️</div>
-      <h4>Pace Tracking</h4>
-      <p>Monitoring scroll velocity and dwell patterns to detect user fatigue.</p>
-    </div>
+A specialized Shopify Theme Extension designed to analyze user interaction signals and adjust the browsing experience based on **Cognitive Load Levels**.
 
-    <div class="analysis-item">
-      <div class="analysis-icon">🧠</div>
-      <h4>Brain-Sync ML</h4>
-      <p>Using Random Forest models to classify real-time cognitive load levels.</p>
-    </div>
+## 🚀 Overview
+This project bridges the gap between Machine Learning and User Experience. By monitoring behavioral markers—such as **scroll velocity**, **dwell time**, and **click-path patterns**—the system identifies when a user is experiencing high cognitive strain and simplifies the UI dynamically.
 
-    <div class="analysis-item">
-      <div class="analysis-icon">🛡️</div>
-      <h4>Privacy Shield</h4>
-      <p>Data is processed locally. No personal identifiers are stored or shared.</p>
-    </div>
-  </div>
+## 🛠 Technical Architecture
+The system follows a three-tier analysis pattern:
+1. **Data Capture:** Lightweight JavaScript listeners track interaction density.
+2. **Inference Engine:** Classification of load levels (Low, Medium, High) using **Random Forest** and **SVM** models.
+3. **UI Adaptation:** A Liquid-based injection layer that modifies layout density and font sizes in real-time.
 
-  {% if block.settings.show_status %}
-    <div class="system-status">
-      <small>Model Accuracy: <strong>94.2%</strong> | Optimization: <strong>Active</strong></small>
-    </div>
-  {% endif %}
-</div>
 
-<style>
-  .cognitive-audit-container {
-    padding: 30px;
-    border: 1px solid rgba(0,0,0,0.1);
-    border-radius: 15px;
-    font-family: 'Inter', sans-serif;
-    margin: 20px 0;
-  }
-  .live-indicator {
-    font-size: 10px;
-    letter-spacing: 1px;
-    color: #ff4b4b;
-    font-weight: bold;
-    display: block;
-    margin-bottom: 5px;
-  }
-  .analysis-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 20px;
-    margin-top: 20px;
-  }
-  .analysis-item h4 {
-    margin: 10px 0 5px;
-    font-size: 16px;
-  }
-  .analysis-item p {
-    font-size: 13px;
-    line-height: 1.5;
-    opacity: 0.8;
-  }
-  .analysis-icon {
-    font-size: 24px;
-  }
-  .system-status {
-    margin-top: 25px;
-    padding-top: 15px;
-    border-top: 1px dashed rgba(0,0,0,0.1);
-    text-align: center;
-  }
-</style>
 
-{% schema %}
-{
-  "name": "Cognitive Load Audit",
-  "target": "section",
-  "settings": [
-    { "type": "text", "id": "title", "label": "Heading", "default": "Adaptive UX Engine" },
-    { "type": "color", "id": "bg_color", "label": "Background", "default": "#ffffff" },
-    { "type": "color", "id": "text_color", "label": "Text Color", "default": "#1a1a1a" },
-    { "type": "checkbox", "id": "show_status", "label": "Show System Accuracy", "default": true }
-  ]
-}
-{% endschema %}
+## ✨ Key Features
+* **Live Analysis Indicator:** Real-time feedback for users on system optimization status.
+* **Privacy-First Design:** All behavioral analysis is processed as anonymized signal data.
+* **Adaptive Theme Blocks:** Custom Liquid blocks that respond to ML-driven metafield updates.
+
+## 📂 Repository Structure
+* `/blocks`: Contains the `cognitive-analysis.liquid` App Block.
+* `/assets`: Pixel-art icons and CSS for the adaptive interface.
+* `/snippets`: Reusable Liquid logic for calculating interaction thresholds.
+
+## ⚙️ Installation
+1. Clone the repository:
+   ```bash
+   git clone [https://github.com/your-username/cognitive-audit-pro.git](https://github.com/your-username/cognitive-audit-pro.git)
