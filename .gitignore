@@ -1,0 +1,7 @@
+# Server artifacts
+/server/node_modules/
+/server/.env
+/server/.env.*
+
+# General
+.DS_Store
