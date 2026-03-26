@@ -1074,12 +1074,31 @@ function provideFeedbackDialog() {
     `;
     
     dialog.innerHTML = `
-        <h2 style="margin: 0 0 20px 0; font-size: 20px; color: #333;">
+        <h2 style="margin: 0 0 10px 0; font-size: 20px; color: #333;">
             How difficult is this content?
         </h2>
         <p style="margin: 0 0 20px 0; color: #666; font-size: 14px;">
             Your feedback helps improve the AI detection system.
         </p>
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; margin-bottom: 16px;">
+            <div style="font-size: 12px; font-weight: 700; color: #334155; margin-bottom: 8px;">Quick validation</div>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; margin-bottom: 8px;">
+                <input type="checkbox" id="felt-confused" />
+                I felt confused or lost while reading
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; margin-bottom: 8px;">
+                <input type="checkbox" id="reread-multiple" />
+                I had to re-read sections multiple times
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; margin-bottom: 8px;">
+                <input type="checkbox" id="needed-external" />
+                I needed to look up external resources
+            </label>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569;">
+                <input type="checkbox" id="took-notes" />
+                I took notes or copied text to understand it
+            </label>
+        </div>
         <div style="display: flex; gap: 10px; margin-bottom: 20px;">
             <button class="feedback-btn" data-difficulty="easy" style="
                 flex: 1;
@@ -1165,9 +1184,24 @@ function provideFeedbackDialog() {
         });
         btn.addEventListener('click', (e) => {
             const difficulty = e.target.dataset.difficulty;
+            const validationData = {
+                feltConfused: document.getElementById('felt-confused')?.checked || false,
+                rereadMultiple: document.getElementById('reread-multiple')?.checked || false,
+                neededExternal: document.getElementById('needed-external')?.checked || false,
+                tookNotes: document.getElementById('took-notes')?.checked || false
+            };
+
+            const validationScore = Object.values(validationData).filter(Boolean).length;
+            let adjustedDifficulty = difficulty;
+
+            if (difficulty === 'easy' && validationScore >= 2) {
+                adjustedDifficulty = 'medium';
+            } else if (difficulty === 'medium' && validationScore >= 3) {
+                adjustedDifficulty = 'hard';
+            }
             
             if (window.mlDetector) {
-                window.mlDetector.provideFeedback(difficulty);
+                window.mlDetector.provideFeedback(adjustedDifficulty, validationData);
             }
             
             // Show thank you message
@@ -1178,6 +1212,11 @@ function provideFeedbackDialog() {
                     <p style="margin: 0; color: #666; font-size: 14px;">
                         Your feedback helps improve the cognitive load detection.
                     </p>
+                    ${adjustedDifficulty !== difficulty ? `
+                        <p style="margin-top: 10px; color: #f59e0b; font-size: 12px;">
+                            Adjusted to "${adjustedDifficulty}" based on your responses.
+                        </p>
+                    ` : ''}
                 </div>
             `;
             
@@ -1215,7 +1254,7 @@ chrome.runtime.onMessage.addListener((message) => {
 window.cognitiveLoadDebug = {
     getCurrentScore: () => window.mlDetector ? window.mlDetector.getCurrentScore() : null,
     getScoreHistory: () => window.mlDetector ? window.mlDetector.getScoreHistory() : null,
-    provideFeedback: (difficulty) => window.mlDetector ? window.mlDetector.provideFeedback(difficulty) : null,
+    provideFeedback: (difficulty, metadata) => window.mlDetector ? window.mlDetector.provideFeedback(difficulty, metadata) : null,
     showFeedbackDialog: provideFeedbackDialog,
     getLogData: () => logData
 };

@@ -85,6 +85,7 @@ const GEMINI_COOLDOWN_MS = 60_000; // 60 seconds
 const GEMINI_PROXY_URL_STORAGE_KEY = 'geminiProxyUrl';
 
 let auditReport = [];
+let validationHistory = [];
 
 chrome.action.onClicked.addListener((tab) => {
     if (!tab?.id) return;
@@ -286,6 +287,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         cognitiveLoadModel.predict(message.features)
             .then(score => {
                 console.log(`🎯 ML Prediction: ${(score * 100).toFixed(0)}%`);
+                chrome.storage.local.set({
+                    lastMLPrediction: {
+                        score,
+                        timestamp: Date.now()
+                    }
+                });
                 sendResponse({ score: score });
             })
             .catch(error => {
@@ -301,6 +308,33 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         console.log('📝 Training feedback received');
         
         cognitiveLoadModel.collectTrainingData(message.features, message.label);
+
+        chrome.storage.local.get(['lastMLPrediction'], (result) => {
+            const lastPrediction = result.lastMLPrediction;
+            if (lastPrediction && typeof lastPrediction.score === 'number') {
+                const error = Math.abs(lastPrediction.score - message.label);
+                validationHistory.push({
+                    predicted: lastPrediction.score,
+                    actual: message.label,
+                    error,
+                    timestamp: Date.now(),
+                    metadata: message.metadata || {}
+                });
+
+                if (validationHistory.length > 50) {
+                    validationHistory.shift();
+                }
+
+                const avgError = validationHistory.reduce((sum, item) => sum + item.error, 0) /
+                    Math.max(1, validationHistory.length);
+                const accuracy = 1 - avgError;
+
+                chrome.storage.local.set({
+                    modelAccuracy: accuracy,
+                    validationHistory
+                });
+            }
+        });
         
         // Save feedback to storage for analysis
         chrome.storage.local.get(['trainingFeedback'], (result) => {
@@ -308,7 +342,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             feedback.push({
                 features: message.features,
                 label: message.label,
-                timestamp: message.timestamp || Date.now()
+                timestamp: message.timestamp || Date.now(),
+                metadata: message.metadata || {}
             });
             
             // Keep only last 100 feedbacks
@@ -386,6 +421,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'GET_MODEL_INFO') {
         const info = cognitiveLoadModel.getModelInfo();
         sendResponse(info);
+        return true;
+    }
+
+    // Handle feature importance request
+    if (message.type === 'GET_FEATURE_IMPORTANCE') {
+        const importance = cognitiveLoadModel.getFeatureImportance();
+        sendResponse({ importance });
         return true;
     }
     

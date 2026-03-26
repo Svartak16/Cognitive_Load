@@ -1,9 +1,11 @@
 // ml/feature-extractor.js - ENHANCED VERSION
-// Returns a 46-length numeric feature vector:
+// Returns a 49-length numeric feature vector:
 // - 11 base features
 // - 15 enhanced features (NEW)
 // - 10 original polynomial interactions
 // - 10 advanced polynomial interactions (NEW)
+// - 2 temporal features
+// - 1 content-complexity feature
 
 class FeatureExtractor {
   constructor() {
@@ -46,6 +48,7 @@ class FeatureExtractor {
     this.lastVelocity = undefined;
     
     this.clickPositions = [];        // For calculating click entropy
+    this.contentComplexityCache = { value: 0.5, timestamp: 0 };
     
     // ========== LISTENERS ==========
     this.onScroll = this.handleScroll.bind(this);
@@ -227,7 +230,67 @@ class FeatureExtractor {
     return Math.sqrt(variance); // Standard deviation
   }
 
-  // ========== ENHANCED FEATURE ARRAY (46 features) ==========
+  countSyllables(text) {
+    const words = String(text || '').toLowerCase().match(/\b\w+\b/g) || [];
+    return words.reduce((count, word) => {
+      const syllables = word.match(/[aeiouy]{1,2}/g) || [];
+      return count + Math.max(1, syllables.length);
+    }, 0);
+  }
+
+  countTechnicalWords(text) {
+    const words = String(text || '').match(/\b\w+\b/g) || [];
+    return words.filter((word) => (
+      word.length >= 12 ||
+      /[A-Z]{2,}/.test(word) ||
+      /\d+\.\d+/.test(word) ||
+      /\w+-\w+-\w+/.test(word)
+    )).length;
+  }
+
+  calculateContentComplexity() {
+    const now = Date.now();
+    if (now - this.contentComplexityCache.timestamp < 10_000) {
+      return this.contentComplexityCache.value;
+    }
+
+    const text = document?.body?.innerText || '';
+    const sentences = (text.match(/[.!?]+/g) || []).length;
+    const words = (text.match(/\b\w+\b/g) || []).length;
+
+    if (sentences === 0 || words === 0) {
+      this.contentComplexityCache = { value: 0.5, timestamp: now };
+      return 0.5;
+    }
+
+    const syllables = this.countSyllables(text);
+    const avgWordsPerSentence = words / sentences;
+    const avgSyllablesPerWord = syllables / words;
+
+    const fleschScore = 206.835 - (1.015 * avgWordsPerSentence) - (84.6 * avgSyllablesPerWord);
+    const fleschNormalized = Math.max(0, Math.min(1, (100 - fleschScore) / 100));
+
+    const technicalDensity = Math.min(this.countTechnicalWords(text) / words, 0.3) / 0.3;
+    const avgWordLength = text.replace(/\s+/g, '').length / words;
+    const wordLengthComplexity = Math.min(avgWordLength / 10, 1);
+
+    const combined = (fleschNormalized * 0.5) + (technicalDensity * 0.3) + (wordLengthComplexity * 0.2);
+    const normalized = Math.max(0, Math.min(1, combined));
+
+    this.contentComplexityCache = { value: normalized, timestamp: now };
+    return normalized;
+  }
+
+  getTemporalFeatures(timeOnPageSeconds) {
+    const fatigueFactor = Math.min(timeOnPageSeconds / 600, 1);
+    const recentInteractionRate = this.clickCount / Math.max(1, timeOnPageSeconds);
+    const expectedInteractionRate = 0.5;
+    const interactionDecay = 1 - Math.min(recentInteractionRate / expectedInteractionRate, 1);
+
+    return [fatigueFactor, interactionDecay];
+  }
+
+  // ========== ENHANCED FEATURE ARRAY (49 features) ==========
   toArray() {
     const now = Date.now();
     const timeOnPage = (now - this.startTime) / 1000; // seconds
@@ -326,8 +389,18 @@ class FeatureExtractor {
       awayTimeRatio * focusChurn                     // 46: Multitasking load
     ];
 
-    // TOTAL: 11 + 15 + 10 + 10 = 46 features
-    return [...baseFeatures, ...enhancedFeatures, ...polynomialFeatures, ...advancedInteractions];
+    const temporalFeatures = this.getTemporalFeatures(timeOnPage);
+    const contentComplexity = this.calculateContentComplexity();
+
+    // TOTAL: 11 + 15 + 10 + 10 + 2 + 1 = 49 features
+    return [
+      ...baseFeatures,
+      ...enhancedFeatures,
+      ...polynomialFeatures,
+      ...advancedInteractions,
+      ...temporalFeatures,
+      contentComplexity
+    ];
   }
 
   // ========== ENHANCED DEBUG INFO ==========
@@ -354,7 +427,8 @@ class FeatureExtractor {
       errorClicks: this.errorClicks,
       tabSwitchDuration: this.tabSwitchDuration,
       clickEntropy: this.calculateClickEntropy(),
-      mouseAccelVariance: this.getMouseAccelerationVariance()
+      mouseAccelVariance: this.getMouseAccelerationVariance(),
+      contentComplexity: this.calculateContentComplexity()
     };
   }
 

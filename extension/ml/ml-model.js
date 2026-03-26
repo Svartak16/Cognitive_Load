@@ -6,12 +6,12 @@
 // - Incremental/online learning
 // - L2 regularization
 // - Mini-batch training with adaptive learning rates
-// - Support for 21 features (11 base + 10 polynomial interactions)
+// - Support for 49 features (11 base + 15 enhanced + 10 polynomial + 10 advanced + 2 temporal + 1 content)
 
 class CognitiveLoadMLModel {
   constructor() {
     // Feature vector length expected by the current model version.
-    this.featureCount = 46;
+    this.featureCount = 49;
     this.weights = new Array(this.featureCount).fill(0);
     this.bias = 0;
     this.isTraining = false;
@@ -20,11 +20,16 @@ class CognitiveLoadMLModel {
     this.isInitializing = false;
     
     // Training hyperparameters
-    this.initialLearningRate = 0.1;
-    this.minLearningRate = 0.001;
-    this.l2Lambda = 0.01; // L2 regularization strength
-    this.batchSize = 8; // Mini-batch size
-    this.minSamplesForBatchTraining = 20; // Minimum samples before batch training
+    this.initialLearningRate = 0.05;
+    this.minLearningRate = 0.0001;
+    this.l2Lambda = 0.02; // L2 regularization strength
+    this.batchSize = 16; // Mini-batch size
+    this.minSamplesForBatchTraining = 15; // Minimum samples before batch training
+
+    // Momentum helps smooth noisy online updates.
+    this.momentum = 0.9;
+    this.velocities = new Array(this.featureCount).fill(0);
+    this.biasVelocity = 0;
     
     // Adaptive learning rate tracking
     this.learningRate = this.initialLearningRate;
@@ -38,7 +43,8 @@ class CognitiveLoadMLModel {
     // Legacy support:
     // - 11 features (base only)
     // - 21 features (11 base + 10 interactions)
-    // - current: 46 features
+    // - 46 features (pre-temporal/content upgrade)
+    // - current: 49 features
     const out = new Array(this.featureCount).fill(0);
     const copyLen = Math.min(features.length, this.featureCount);
     for (let i = 0; i < copyLen; i++) out[i] = features[i];
@@ -71,12 +77,19 @@ class CognitiveLoadMLModel {
         }
         
         if (result.mlModelWeights && Array.isArray(result.mlModelWeights)) {
-          // Ensure weights array matches expected size
           if (result.mlModelWeights.length === this.featureCount) {
             this.weights = result.mlModelWeights;
             this.bias = result.mlModelBias || 0;
             this.trainingCount = result.mlModelTrainingCount || 0;
             console.log(`📦 Loaded saved model (${this.trainingCount} training sessions)`);
+          } else if (result.mlModelWeights.length < this.featureCount) {
+            this.weights = new Array(this.featureCount).fill(0);
+            for (let i = 0; i < result.mlModelWeights.length; i++) {
+              this.weights[i] = result.mlModelWeights[i];
+            }
+            this.bias = result.mlModelBias || 0;
+            this.trainingCount = result.mlModelTrainingCount || 0;
+            console.warn(`⚠️ Loaded older model with ${result.mlModelWeights.length} features. Padded to ${this.featureCount}.`);
           } else {
             console.warn(`⚠️ Saved model has ${result.mlModelWeights.length} features, expected ${this.featureCount}. Resetting.`);
             this.resetModel();
@@ -140,9 +153,11 @@ class CognitiveLoadMLModel {
     for (let i = 0; i < this.weights.length; i++) {
       // Gradient: error * feature[i] + L2 regularization term
       const gradient = error * normalized[i] + this.l2Lambda * this.weights[i];
-      this.weights[i] -= adaptiveLR * gradient;
+      this.velocities[i] = (this.momentum * this.velocities[i]) - (adaptiveLR * gradient);
+      this.weights[i] += this.velocities[i];
     }
-    this.bias -= adaptiveLR * error;
+    this.biasVelocity = (this.momentum * this.biasVelocity) - (adaptiveLR * error);
+    this.bias += this.biasVelocity;
     
     // Track loss for adaptive learning rate
     const loss = error * error;
@@ -218,7 +233,7 @@ class CognitiveLoadMLModel {
         this.learningRate = Math.max(this.minLearningRate, this.learningRate * 0.95);
       }
       
-      const epochs = 50; // Reduced epochs since we're doing incremental updates
+      const epochs = 40; // Reduced epochs since we're doing incremental updates
       
       for (let epoch = 0; epoch < epochs; epoch++) {
         // Shuffle training data for better learning
@@ -312,6 +327,8 @@ class CognitiveLoadMLModel {
     console.log('🔄 Resetting model...');
     this.weights = new Array(this.featureCount).fill(0);
     this.bias = 0;
+    this.velocities = new Array(this.featureCount).fill(0);
+    this.biasVelocity = 0;
     this.trainingData = [];
     this.trainingCount = 0;
     this.learningRate = this.initialLearningRate;
@@ -350,8 +367,38 @@ class CognitiveLoadMLModel {
       learningRate: this.learningRate,
       averageLoss: avgLoss,
       modelExists: true,
-      hasPersistedWeights: this.weights.some(w => w !== 0) // Check if model has been trained
+      hasPersistedWeights: this.weights.some(w => w !== 0), // Check if model has been trained
+      topFeatures: this.getFeatureImportance().slice(0, 10).map((item) => item.featureName)
     };
+  }
+
+  getFeatureImportance() {
+    const importance = this.weights.map((weight, index) => ({
+      index,
+      weight,
+      absWeight: Math.abs(weight),
+      featureName: this.getFeatureName(index)
+    }));
+
+    importance.sort((a, b) => b.absWeight - a.absWeight);
+    return importance;
+  }
+
+  getFeatureName(index) {
+    const names = [
+      'scrollDepth', 'scrollSpeed', 'hoverDensity', 'clickDensity', 'timeOnPage',
+      'typingActivity', 'mouseTravel', 'isUnfocused', 'focusChanges', 'selectionLength', 'noise',
+      'scrollReversals', 'rapidClicks', 'mouseStops', 'textCopies', 'rightClicks',
+      'scrollPauses', 'errorClicks', 'awayTime', 'clickEntropy', 'mouseAccelVar',
+      'scrollConsistency', 'engagementScore', 'frustrationScore', 'attentionScore', 'explorationScore',
+      'scroll×hover', 'scrollSpeed×click', 'time×hover', 'click×focus', 'mouseTravel×hover',
+      'scroll×selection', 'typing×focus', 'scrollSpeed×time', 'hover×selection', 'click×typing',
+      'scrollRev×hover', 'rapidClick×errorClick', 'mouseStop×selection', 'scrollPause×time',
+      'clickEntropy×focus', 'frustration×attention', 'exploration×scrollRev', 'engagement×scrollCons',
+      'textCopy×typing', 'awayTime×focus', 'fatigueFactor', 'interactionDecay', 'contentComplexity'
+    ];
+
+    return names[index] || `feature_${index}`;
   }
 }
 

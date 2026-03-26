@@ -259,7 +259,7 @@ class MLCognitiveLoadDetector {
       }, 10000);
     }
     
-    provideFeedback(difficulty) {
+    provideFeedback(difficulty, metadata = {}) {
       // difficulty: 'easy' (0), 'medium' (0.5), 'hard' (1)
       const labelMap = {
         'easy': 0,
@@ -276,7 +276,8 @@ class MLCognitiveLoadDetector {
         type: 'TRAINING_FEEDBACK',
         features: features,
         label: label,
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        metadata
       });
     }
     

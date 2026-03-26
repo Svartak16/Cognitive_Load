@@ -15,6 +15,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const modelStatusEl = document.getElementById("model-status");
     const trainingSamplesEl = document.getElementById("training-samples");
+    const modelAccuracyEl = document.getElementById("model-accuracy");
+    const topFeaturesEl = document.getElementById("top-features");
 
     const strainEl = document.getElementById("strain-score");
     const focusEl = document.getElementById("focus-score");
@@ -78,7 +80,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     function loadData() {
-        chrome.storage.local.get(["userLog", "trainingFeedback"], (data) => {
+        chrome.storage.local.get(["userLog", "trainingFeedback", "modelAccuracy", "validationHistory"], (data) => {
 
             const log = data.userLog || {
                 timeOnPage: 0,
@@ -101,6 +103,11 @@ document.addEventListener("DOMContentLoaded", () => {
             if (trainingSamplesEl) {
                 trainingSamplesEl.textContent = feedbackCount;
             }
+
+            if (modelAccuracyEl) {
+                const accuracy = typeof data.modelAccuracy === "number" ? data.modelAccuracy : null;
+                modelAccuracyEl.textContent = accuracy === null ? "--" : `${(accuracy * 100).toFixed(1)}%`;
+            }
         });
     }
 
@@ -115,6 +122,25 @@ document.addEventListener("DOMContentLoaded", () => {
                 modelStatusEl.textContent = "⏳ Loading...";
                 modelStatusEl.style.color = "#f59e0b";
             }
+        });
+
+        chrome.runtime.sendMessage({ type: "GET_FEATURE_IMPORTANCE" }, (response) => {
+            if (!response || !topFeaturesEl || !Array.isArray(response.importance)) return;
+
+            const top5 = response.importance.slice(0, 5);
+            topFeaturesEl.innerHTML = top5.map((feature) => `
+                <span style="
+                    display:inline-block;
+                    padding:6px 10px;
+                    border-radius:999px;
+                    background:rgba(255,255,255,0.08);
+                    border:1px solid rgba(148,163,184,0.16);
+                    color:rgba(229,231,235,0.9);
+                    font-size:11px;
+                ">
+                    ${feature.featureName}
+                </span>
+            `).join("");
         });
     }
 
