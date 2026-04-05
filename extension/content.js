@@ -346,6 +346,10 @@ window.addEventListener('popstate', onPopStateDerived);
 
 let sidebarStylesInjected = false;
 let focusModeActive = false;
+let semanticFocusActive = false;
+let semanticFocusRequested = false;
+let semanticPriorityThreshold = 9;
+let semanticClassification = null;
 
 function ensureSidebarStyles() {
     if (sidebarStylesInjected) return;
@@ -631,6 +635,26 @@ function createSidebar() {
     if (downloadBtn) downloadBtn.onclick = () => downloadReport();
 }
 
+function openSidebar() {
+    if (!sidebar) createSidebar();
+    if (sidebar) {
+        sidebar.classList.add('active');
+        updateSidebarUI();
+    }
+}
+
+function toggleSidebar() {
+    if (!sidebar) createSidebar();
+    if (!sidebar) return;
+    sidebar.classList.toggle('active');
+    if (sidebar.classList.contains('active')) {
+        updateSidebarUI();
+        appendToTerminal('Sidebar opened');
+    } else {
+        appendToTerminal('Sidebar closed');
+    }
+}
+
 // --- Sticky Note Logic ---
 function createDraggableNote(color = '#fffaf0') {
     const note = document.createElement('div');
@@ -721,7 +745,11 @@ function createDraggableNote(color = '#fffaf0') {
 function toggleFocusMode() {
     focusModeActive = !focusModeActive;
     if (focusModeActive) {
-        applyFocusMode();
+        if (semanticClassification) {
+            applySemanticFocusMode(semanticPriorityThreshold);
+        } else {
+            applyFocusMode();
+        }
         const btn = document.getElementById('focus-mode-btn');
         if (btn) btn.textContent = 'Exit Focus';
         appendToTerminal('Focus Mode enabled');
@@ -734,6 +762,7 @@ function toggleFocusMode() {
 }
 
 function applyFocusMode() {
+    semanticFocusActive = false;
     const clutterTags = ['aside', 'footer', 'nav'];
     const clutterPatterns = ['ad', 'sidebar', 'social', 'popup', 'banner', 'promo'];
 
@@ -770,18 +799,110 @@ function applyFocusMode() {
 }
 
 function removeFocusMode() {
+    semanticFocusActive = false;
+    semanticFocusRequested = false;
     const fs = document.getElementById('sidebar-focus-style');
     if (fs) fs.remove();
 
-    document.querySelectorAll('.clutter-hidden').forEach(el => {
+    document.querySelectorAll('.clutter-hidden, .semantic-hidden').forEach(el => {
         if (el.dataset._origDisplay !== undefined) el.style.display = el.dataset._origDisplay;
         if (el.dataset._origOpacity !== undefined) el.style.opacity = el.dataset._origOpacity;
-        el.style.pointerEvents = '';
+        if (el.dataset._semanticOrigDisplay !== undefined) el.style.display = el.dataset._semanticOrigDisplay;
+        if (el.dataset._semanticOrigVisibility !== undefined) el.style.visibility = el.dataset._semanticOrigVisibility;
+        if (el.dataset._semanticOrigOpacity !== undefined) el.style.opacity = el.dataset._semanticOrigOpacity;
+        if (el.dataset._semanticOrigPointerEvents !== undefined) el.style.pointerEvents = el.dataset._semanticOrigPointerEvents;
+        if (el.dataset._semanticOrigMaxHeight !== undefined) el.style.maxHeight = el.dataset._semanticOrigMaxHeight;
+        if (el.dataset._semanticOrigOverflow !== undefined) el.style.overflow = el.dataset._semanticOrigOverflow;
+        if (el.dataset._semanticOrigPointerEvents === undefined && (el.dataset._origDisplay !== undefined || el.dataset._origOpacity !== undefined)) {
+            el.style.pointerEvents = '';
+        }
         el.style.height = '';
         el.classList.remove('clutter-hidden');
+        el.classList.remove('semantic-hidden');
         delete el.dataset._origDisplay;
         delete el.dataset._origOpacity;
+        delete el.dataset._semanticOrigDisplay;
+        delete el.dataset._semanticOrigVisibility;
+        delete el.dataset._semanticOrigOpacity;
+        delete el.dataset._semanticOrigPointerEvents;
+        delete el.dataset._semanticOrigMaxHeight;
+        delete el.dataset._semanticOrigOverflow;
     });
+}
+
+function getSemanticClassificationEntries() {
+    return Array.isArray(semanticClassification?.classifications) ? semanticClassification.classifications : [];
+}
+
+function getSemanticTargets(selector) {
+    if (!selector || typeof selector !== 'string') return [];
+    try {
+        return Array.from(document.querySelectorAll(selector));
+    } catch {
+        return [];
+    }
+}
+
+function hideSemanticElement(el) {
+    if (!(el instanceof Element)) return;
+    if (!el.classList.contains('semantic-hidden')) {
+        el.dataset._semanticOrigDisplay = el.style.display || '';
+        el.dataset._semanticOrigVisibility = el.style.visibility || '';
+        el.dataset._semanticOrigOpacity = el.style.opacity || '';
+        el.dataset._semanticOrigPointerEvents = el.style.pointerEvents || '';
+        el.dataset._semanticOrigMaxHeight = el.style.maxHeight || '';
+        el.dataset._semanticOrigOverflow = el.style.overflow || '';
+    }
+
+    el.classList.add('semantic-hidden');
+    el.style.display = 'none';
+    el.style.visibility = 'hidden';
+    el.style.opacity = '0';
+    el.style.pointerEvents = 'none';
+    el.style.maxHeight = '0';
+    el.style.overflow = 'hidden';
+}
+
+function hideBySemanticSelector(selector) {
+    getSemanticTargets(selector).forEach(hideSemanticElement);
+}
+
+function applySemanticFocusMode(priorityThreshold = 9) {
+    semanticFocusActive = true;
+    semanticFocusRequested = true;
+    semanticPriorityThreshold = Number(priorityThreshold) || 9;
+    focusModeActive = true;
+
+    removeFocusMode();
+    focusModeActive = true;
+    semanticFocusActive = true;
+    semanticFocusRequested = true;
+    semanticPriorityThreshold = Number(priorityThreshold) || 9;
+
+    const entries = getSemanticClassificationEntries();
+    if (!entries.length) {
+        applyFocusMode();
+        return;
+    }
+
+    const visibleThreshold = semanticPriorityThreshold;
+    entries.forEach((item) => {
+        const shouldHide = Boolean(item.hide_in_focus_mode) || Number(item.priority) >= visibleThreshold;
+        if (!shouldHide) return;
+        hideBySemanticSelector(item.element_id);
+    });
+
+    if (!document.getElementById('sidebar-focus-style')) {
+        const style = document.createElement('style');
+        style.id = 'sidebar-focus-style';
+        style.textContent = `
+            body { line-height: 1.65 !important; background: #f7f7f8 !important; }
+            section, article { max-width: 900px !important; margin: 2rem auto !important; padding: 1.5rem !important; }
+            nav, footer { display: none !important; }
+            * { animation: none !important; transition: none !important; }
+        `;
+        document.head.appendChild(style);
+    }
 }
 
 // --- Report download (HTML fallback; PDF if jsPDF exists on page) ---
@@ -1014,12 +1135,42 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ========== SIDEBAR / CAPTURE MESSAGE HANDLERS (ADDITIVE) ==========
 chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.action === "toggle_sidebar") {
-        if (!sidebar) createSidebar();
-        sidebar.classList.toggle('active');
-        if (sidebar.classList.contains('active')) {
-            updateSidebarUI();
-            appendToTerminal('Sidebar opened');
+        toggleSidebar();
+    }
+
+    if (msg?.action === "APPLY_SEMANTIC_CLASSIFICATION") {
+        semanticClassification = msg.classification || null;
+        if (typeof msg.priorityThreshold === 'number') {
+            semanticPriorityThreshold = msg.priorityThreshold;
         }
+        if (semanticFocusRequested || focusModeActive) {
+            applySemanticFocusMode(semanticPriorityThreshold);
+        }
+        appendToTerminal('Semantic classification received');
+    }
+
+    if (msg?.action === "APPLY_FOCUS_MODE") {
+        semanticFocusRequested = true;
+        if (typeof msg.priorityThreshold === 'number') {
+            semanticPriorityThreshold = msg.priorityThreshold;
+        }
+        if (semanticClassification) {
+            applySemanticFocusMode(semanticPriorityThreshold);
+        } else {
+            applyFocusMode();
+        }
+        const btn = document.getElementById('focus-mode-btn');
+        if (btn) btn.textContent = 'Exit Focus';
+        focusModeActive = true;
+        appendToTerminal(`Focus mode threshold ${semanticPriorityThreshold}+`);
+    }
+
+    if (msg?.action === "RESTORE_FOCUS_MODE") {
+        removeFocusMode();
+        focusModeActive = false;
+        const btn = document.getElementById('focus-mode-btn');
+        if (btn) btn.textContent = 'Focus Mode';
+        appendToTerminal('Focus Mode restored');
     }
 
     if (msg?.action === "DISPLAY_CAPTURE") {
@@ -1256,5 +1407,7 @@ window.cognitiveLoadDebug = {
     getScoreHistory: () => window.mlDetector ? window.mlDetector.getScoreHistory() : null,
     provideFeedback: (difficulty, metadata) => window.mlDetector ? window.mlDetector.provideFeedback(difficulty, metadata) : null,
     showFeedbackDialog: provideFeedbackDialog,
+    openSidebar: () => openSidebar(),
+    toggleSidebar: () => toggleSidebar(),
     getLogData: () => logData
 };

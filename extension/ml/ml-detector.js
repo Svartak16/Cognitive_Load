@@ -71,12 +71,17 @@ class MLCognitiveLoadDetector {
       // Trigger assistance at different thresholds
       if (score > 0.75) {
         console.log('🔴 VERY HIGH LOAD - Triggering urgent assistance');
+        this.triggerProgressiveFocus(7);
         this.triggerGeminiAssistance(score, 'urgent');
       } else if (score > 0.65) {
         console.log('🟠 HIGH LOAD - Triggering assistance');
+        this.triggerProgressiveFocus(9);
         this.triggerGeminiAssistance(score, 'high');
       } else if (score > 0.50) {
         console.log('🟡 Medium load - Monitoring');
+      } else if (score < 0.40) {
+        console.log('🟢 Load dropped - Restoring focus mode');
+        this.restoreFocusMode();
       } else {
         console.log('🟢 Normal load');
       }
@@ -90,6 +95,19 @@ class MLCognitiveLoadDetector {
           level: this.getLoadLevel(score),
           timestamp: Date.now()
         }
+      });
+    }
+
+    triggerProgressiveFocus(priorityThreshold) {
+      this.sendMessageSafe({
+        type: 'APPLY_FOCUS_MODE',
+        priorityThreshold
+      });
+    }
+
+    restoreFocusMode() {
+      this.sendMessageSafe({
+        type: 'RESTORE_FOCUS_MODE'
       });
     }
     
@@ -243,7 +261,16 @@ class MLCognitiveLoadDetector {
       notification.addEventListener('click', () => {
         // Ask background script to toggle the Cognitive Load sidebar UI
         // (contains focus mode, sticky notes, capture + image analysis preview, and audit report).
-        this.sendMessageSafe({ type: 'REQUEST_TOGGLE_SIDEBAR' });
+        try {
+          if (window.cognitiveLoadDebug?.openSidebar) {
+            window.cognitiveLoadDebug.openSidebar();
+          } else {
+            this.sendMessageSafe({ type: 'REQUEST_TOGGLE_SIDEBAR' });
+          }
+        } catch (error) {
+          console.warn('Sidebar open failed:', error);
+          this.sendMessageSafe({ type: 'REQUEST_TOGGLE_SIDEBAR' });
+        }
         notification.style.animation = 'slideOut 0.3s ease-out';
         setTimeout(() => notification.remove(), 300);
       });

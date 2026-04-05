@@ -83,9 +83,72 @@ const AUDIT_REPORT_STORAGE_KEY = 'auditReport';
 const LAST_GEMINI_CALL_STORAGE_KEY = 'lastGeminiCall';
 const GEMINI_COOLDOWN_MS = 60_000; // 60 seconds
 const GEMINI_PROXY_URL_STORAGE_KEY = 'geminiProxyUrl';
+const SEMANTIC_CLASSIFICATION_CACHE_KEY = 'semanticClassificationCache';
+const SEMANTIC_CLASSIFICATION_COOLDOWN_MS = 5 * 60 * 1000;
+
+const SEMANTIC_CLASSIFICATION_SYSTEM_PROMPT = `
+You are a DOM semantic classifier for a cognitive load reduction system.
+Your job is to analyze the structure of a webpage and classify each major section to help a struggling reader focus on what matters.
+
+You will receive a JSON object with page metadata and a DOM element list.
+
+Your task is to classify each element into exactly one of these categories:
+
+CATEGORIES:
+- "core_content"     → The primary article, documentation, or information the user came to read. Paragraphs, headings, main text blocks, code blocks, technical explanations.
+- "supporting"       → Directly helps understand core content. In-article images, figures, captions, tables, diagrams, footnotes, relevant callout boxes.
+- "navigation"       → Helps move around the site. Headers, footers, breadcrumbs, table of contents, pagination, back buttons, site menus.
+- "supplementary"    → Related but not essential. Related articles, author bios, tags, categories, share buttons, comment sections, "you might also like" sections.
+- "noise"            → Actively harmful to focus. Ads, cookie banners, newsletter popups, social media widgets, floating chat bubbles, promotional banners, notification requests, tracking consent dialogs.
+
+CLASSIFICATION RULES:
+1. When in doubt between two categories, always choose the one that better serves someone who is cognitively struggling to understand the page content.
+2. A table of contents is "navigation" not "core_content" - even if it contains useful headings.
+3. Code examples inside a tutorial are "core_content" not "supporting".
+4. Images that illustrate a concept are "supporting". Decorative images or stock photos are "noise".
+5. A sticky header with just the site logo and nav links is "navigation". A sticky header that shows reading progress or article title is "supporting".
+6. Comment sections are always "supplementary" regardless of quality.
+7. If an element contains both core content and noise, classify it by its dominant purpose and note the mixed content in your reasoning.
+
+OUTPUT FORMAT:
+Return a single valid JSON object only, with this structure:
+{
+  "page_type": "article | documentation | search_results | product_page | dashboard | forum | other",
+  "confidence": 0.0,
+  "reading_complexity": "low | medium | high | very_high",
+  "classifications": [
+    {
+      "element_id": "string",
+      "category": "core_content | supporting | navigation | supplementary | noise",
+      "confidence": 0.0,
+      "reasoning": "one sentence max",
+      "hide_in_focus_mode": true,
+      "priority": 1
+    }
+  ],
+  "focus_mode_strategy": "A single sentence describing the recommended approach for this specific page type",
+  "estimated_core_content_percentage": 0
+}
+
+HIDE_IN_FOCUS_MODE RULES:
+- "noise" → always true
+- "supplementary" → always true
+- "navigation" → true UNLESS it is a table of contents or in-page anchor nav
+- "supporting" → always false
+- "core_content" → always false
+
+PRIORITY FIELD:
+1-3  → Never hide, critical to understanding
+4-6  → Hide only at very high cognitive load
+7-8  → Hide at high cognitive load
+9-10 → Hide immediately in focus mode
+
+Return JSON only. No markdown, no explanation outside the JSON.
+`.trim();
 
 let auditReport = [];
 let validationHistory = [];
+let semanticClassificationCache = {};
 
 chrome.action.onClicked.addListener((tab) => {
     if (!tab?.id) return;
@@ -387,8 +450,76 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             message: "The AI assistant is available to help you understand this content better.",
             priority: 2
         });
+
+        const tabId = sender?.tab?.id;
+        if (tabId) {
+            const priorityThreshold = message?.data?.level === 'urgent' ? 7 : 9;
+            (async () => {
+                try {
+                    const classification = await runSemanticClassification(tabId, {
+                        priorityThreshold,
+                        forceRefresh: false
+                    });
+                    if (classification) {
+                        chrome.tabs.sendMessage(tabId, {
+                            action: 'APPLY_SEMANTIC_CLASSIFICATION',
+                            classification,
+                            priorityThreshold
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Semantic classification failed:', error?.message || error);
+                    chrome.tabs.sendMessage(tabId, {
+                        action: 'APPLY_FOCUS_MODE',
+                        priorityThreshold
+                    });
+                }
+            })();
+        }
         
         sendResponse({ success: true });
+    }
+
+    if (message.type === 'REQUEST_SEMANTIC_FOCUS_MODE') {
+        const tabId = sender?.tab?.id;
+        if (tabId) {
+            (async () => {
+                try {
+                    const classification = await runSemanticClassification(tabId, {
+                        forceRefresh: false
+                    });
+                    if (classification) {
+                        chrome.tabs.sendMessage(tabId, {
+                            action: 'APPLY_SEMANTIC_CLASSIFICATION',
+                            classification,
+                            priorityThreshold: Number(message.priorityThreshold) || 9
+                        });
+                    }
+                } catch (error) {
+                    console.warn('Semantic focus request failed:', error?.message || error);
+                }
+            })();
+        }
+        sendResponse({ success: true });
+    }
+
+    if (message.type === 'APPLY_FOCUS_MODE') {
+        const tabId = sender?.tab?.id;
+        if (tabId) {
+            chrome.tabs.sendMessage(tabId, {
+                action: 'APPLY_FOCUS_MODE',
+                priorityThreshold: Number(message.priorityThreshold) || 9
+            });
+        }
+        sendResponse?.({ success: true });
+    }
+
+    if (message.type === 'RESTORE_FOCUS_MODE') {
+        const tabId = sender?.tab?.id;
+        if (tabId) {
+            chrome.tabs.sendMessage(tabId, { action: 'RESTORE_FOCUS_MODE' });
+        }
+        sendResponse?.({ success: true });
     }
     
     // Toggle in-page Cognitive Load sidebar on request (from ml-detector banner click)
@@ -472,6 +603,232 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return true;
     }
 });
+
+function parseClassificationResponse(rawText) {
+    if (!rawText) return null;
+    const cleaned = String(rawText)
+        .replace(/```json\s*/gi, '')
+        .replace(/```/g, '')
+        .trim();
+
+    const firstBrace = cleaned.indexOf('{');
+    const lastBrace = cleaned.lastIndexOf('}');
+    if (firstBrace < 0 || lastBrace <= firstBrace) return null;
+
+    const jsonText = cleaned.slice(firstBrace, lastBrace + 1);
+    try {
+        return JSON.parse(jsonText);
+    } catch {
+        return null;
+    }
+}
+
+function getDefaultPriority(category) {
+    switch (category) {
+        case 'core_content':
+            return 2;
+        case 'supporting':
+            return 4;
+        case 'navigation':
+            return 8;
+        case 'supplementary':
+            return 9;
+        case 'noise':
+            return 10;
+        default:
+            return 6;
+    }
+}
+
+function normalizeClassificationPayload(payload) {
+    const result = payload && typeof payload === 'object' ? { ...payload } : {};
+    const classifications = Array.isArray(result.classifications) ? result.classifications : [];
+
+    result.classifications = classifications
+        .filter((item) => item && typeof item === 'object' && item.element_id)
+        .map((item) => {
+            const category = String(item.category || 'core_content');
+            const priority = Number.isFinite(Number(item.priority))
+                ? Number(item.priority)
+                : getDefaultPriority(category);
+
+            return {
+                element_id: String(item.element_id),
+                category,
+                confidence: Number.isFinite(Number(item.confidence)) ? Number(item.confidence) : 0.5,
+                reasoning: String(item.reasoning || '').slice(0, 180),
+                hide_in_focus_mode: typeof item.hide_in_focus_mode === 'boolean'
+                    ? item.hide_in_focus_mode
+                    : ['noise', 'supplementary'].includes(category),
+                priority: Math.min(10, Math.max(1, priority))
+            };
+        });
+
+    if (typeof result.confidence !== 'number') result.confidence = 0.5;
+    if (!result.page_type) result.page_type = 'other';
+    if (!result.reading_complexity) result.reading_complexity = 'medium';
+    if (!result.focus_mode_strategy) {
+        result.focus_mode_strategy = 'Hide distracting and non-essential sections first, then progressively reduce navigation if cognitive load remains high.';
+    }
+    if (typeof result.estimated_core_content_percentage !== 'number') {
+        const coreCount = result.classifications.filter((item) => item.category === 'core_content' || item.category === 'supporting').length;
+        const total = Math.max(1, result.classifications.length);
+        result.estimated_core_content_percentage = Math.round((coreCount / total) * 100);
+    }
+
+    return result;
+}
+
+async function extractPageStructure(tabId) {
+    const [result] = await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+            const selectors = [
+                'header', 'footer', 'nav', 'main', 'article', 'aside',
+                'section', '[role="main"]', '[role="navigation"]',
+                '[role="banner"]', '[role="complementary"]',
+                '.sidebar', '.ad', '.advertisement', '#comments',
+                '.related', '.newsletter', '.popup', '.modal',
+                '.cookie', '.banner', '.widget', '.social'
+            ];
+
+            const seen = new Set();
+            const elements = [];
+
+            const cssEscape = (value) => {
+                if (window.CSS && typeof window.CSS.escape === 'function') {
+                    return window.CSS.escape(value);
+                }
+                return String(value).replace(/[^a-zA-Z0-9_-]/g, '\\$&');
+            };
+
+            const buildSelector = (el) => {
+                if (!(el instanceof Element)) return '';
+                if (el.id) return `#${cssEscape(el.id)}`;
+
+                const path = [];
+                let node = el;
+                while (node && node.nodeType === 1 && node !== document.body) {
+                    let part = node.tagName.toLowerCase();
+                    const parent = node.parentElement;
+                    if (!parent) break;
+                    const sameTagSiblings = Array.from(parent.children).filter(
+                        (child) => child.tagName === node.tagName
+                    );
+                    if (sameTagSiblings.length > 1) {
+                        part += `:nth-of-type(${sameTagSiblings.indexOf(node) + 1})`;
+                    }
+                    path.unshift(part);
+                    node = parent;
+                }
+                path.unshift('body');
+                return path.join(' > ');
+            };
+
+            selectors.forEach((selector) => {
+                document.querySelectorAll(selector).forEach((el, index) => {
+                    if (seen.has(el)) return;
+                    seen.add(el);
+
+                    const rect = el.getBoundingClientRect();
+                    const text = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 220);
+                    const selectorId = buildSelector(el) || `${el.tagName.toLowerCase()}-${index}`;
+
+                    elements.push({
+                        element_id: selectorId,
+                        tag: el.tagName.toLowerCase(),
+                        id_attr: el.id || null,
+                        classes: el.className || null,
+                        text_preview: text,
+                        word_count: text ? text.split(/\s+/).length : 0,
+                        position: {
+                            top: Math.round(rect.top + window.scrollY),
+                            left: Math.round(rect.left),
+                            width: Math.round(rect.width),
+                            height: Math.round(rect.height)
+                        },
+                        is_visible: rect.width > 0 && rect.height > 0,
+                        has_images: el.querySelectorAll('img').length,
+                        has_links: el.querySelectorAll('a').length,
+                        has_forms: el.querySelectorAll('form,input').length
+                    });
+                });
+            });
+
+            return {
+                elements,
+                url: window.location.href,
+                title: document.title,
+                total_word_count: document.body?.innerText ? document.body.innerText.split(/\s+/).length : 0
+            };
+        }
+    });
+
+    return result?.result || null;
+}
+
+async function readSemanticClassificationCache() {
+    if (semanticClassificationCache && typeof semanticClassificationCache === 'object') {
+        return semanticClassificationCache;
+    }
+    const stored = await getStorageValue(SEMANTIC_CLASSIFICATION_CACHE_KEY);
+    semanticClassificationCache = stored && typeof stored === 'object' ? stored : {};
+    return semanticClassificationCache;
+}
+
+async function writeSemanticClassificationCache(cache) {
+    semanticClassificationCache = cache && typeof cache === 'object' ? cache : {};
+    await setStorageValue(SEMANTIC_CLASSIFICATION_CACHE_KEY, semanticClassificationCache);
+}
+
+async function runSemanticClassification(tabId, options = {}) {
+    const forceRefresh = Boolean(options.forceRefresh);
+    const cache = await readSemanticClassificationCache();
+    const pageData = await extractPageStructure(tabId);
+    if (!pageData?.url) return null;
+
+    const cachedEntry = cache[pageData.url];
+    if (!forceRefresh && cachedEntry && (Date.now() - cachedEntry.timestamp) < SEMANTIC_CLASSIFICATION_COOLDOWN_MS) {
+        return cachedEntry.result;
+    }
+
+    if (!pageData.elements || pageData.elements.length === 0) {
+        return null;
+    }
+
+    const userMessage = `Classify this webpage for focus mode.
+
+Page title: ${pageData.title}
+URL: ${pageData.url}
+Total word count: ${pageData.total_word_count}
+
+DOM elements to classify:
+${JSON.stringify(pageData.elements, null, 2)}
+
+Remember: return only valid JSON matching the schema.`;
+
+    const data = await callGeminiProxy({
+        kind: 'text',
+        prompt: `${SEMANTIC_CLASSIFICATION_SYSTEM_PROMPT}\n\n${userMessage}`
+    });
+
+    if (data?.error) {
+        throw new Error(data.error);
+    }
+
+    const parsed = normalizeClassificationPayload(parseClassificationResponse(data?.text));
+    if (!parsed) {
+        throw new Error('Unable to parse semantic classification response');
+    }
+
+    cache[pageData.url] = {
+        timestamp: Date.now(),
+        result: parsed
+    };
+    await writeSemanticClassificationCache(cache);
+
+    return parsed;
+}
 
 async function appendAuditReportEntry(entry) {
     return new Promise((resolve, reject) => {
