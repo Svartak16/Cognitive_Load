@@ -392,7 +392,7 @@ class FeatureExtractor {
     const temporalFeatures = this.getTemporalFeatures(timeOnPage);
     const contentComplexity = this.calculateContentComplexity();
 
-    // TOTAL: 11 + 15 + 10 + 10 + 2 + 1 = 49 features
+    
     return [
       ...baseFeatures,
       ...enhancedFeatures,

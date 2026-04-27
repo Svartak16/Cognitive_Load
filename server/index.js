@@ -6,13 +6,15 @@ const app = express();
 
 const PORT = Number(process.env.PORT || 8787);
 const GEMINI_API_KEY = String(process.env.GEMINI_API_KEY || '');
+const GEMINI_API_KEY_CHATBOT = String(process.env.GEMINI_API_KEY_CHATBOT || '');
+const GEMINI_API_KEY_BACKGROUND = String(process.env.GEMINI_API_KEY_BACKGROUND || '');
 const GEMINI_MODEL = String(process.env.GEMINI_MODEL || 'gemini-2.5-flash');
 const CORS_ORIGIN = process.env.CORS_ORIGIN ? String(process.env.CORS_ORIGIN) : '*';
 const SAFE_BROWSING_API_KEY = String(process.env.SAFE_BROWSING_API_KEY || '');
 
-if (!GEMINI_API_KEY) {
+if (!GEMINI_API_KEY && !GEMINI_API_KEY_CHATBOT && !GEMINI_API_KEY_BACKGROUND) {
   // eslint-disable-next-line no-console
-  console.warn('[gemini-proxy] GEMINI_API_KEY is not set. /gemini will return 500.');
+  console.warn('[gemini-proxy] No Gemini API key is set. /gemini will return 500.');
 }
 
 app.use(cors({ origin: CORS_ORIGIN }));
@@ -50,8 +52,24 @@ function buildGeminiContents(body) {
   };
 }
 
+function resolveGeminiApiKey(body) {
+  const source = String(body?.source || '').toLowerCase();
+
+  // Dedicated keys reduce concentration of traffic on one key/project.
+  if (source === 'chatbot') {
+    return GEMINI_API_KEY_CHATBOT || GEMINI_API_KEY || GEMINI_API_KEY_BACKGROUND;
+  }
+  if (source === 'background') {
+    return GEMINI_API_KEY_BACKGROUND || GEMINI_API_KEY || GEMINI_API_KEY_CHATBOT;
+  }
+
+  // Backward compatible fallback when source is not provided.
+  return GEMINI_API_KEY || GEMINI_API_KEY_CHATBOT || GEMINI_API_KEY_BACKGROUND;
+}
+
 app.post('/gemini', async (req, res) => {
-  if (!GEMINI_API_KEY) {
+  const apiKey = resolveGeminiApiKey(req.body);
+  if (!apiKey) {
     return res.status(500).json({ error: 'SERVER_MISCONFIGURED' });
   }
 
@@ -59,7 +77,7 @@ app.post('/gemini', async (req, res) => {
   if (payload?.error) return res.status(400).json({ error: payload.error });
 
   try {
-    const url = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(GEMINI_API_KEY)}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/${encodeURIComponent(GEMINI_MODEL)}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const upstream = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

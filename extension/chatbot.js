@@ -21,6 +21,7 @@
 
     // Create chatbot container dynamically
     const chatbotContainer = document.createElement("div");
+    chatbotContainer.setAttribute('data-cognitive-load-ui', 'true');
     chatbotContainer.innerHTML = `
         <div id="chatbot-box">
             <div class="chat-header">
@@ -40,103 +41,178 @@
 
     const style = document.createElement("style");
     style.textContent = `
+        :root {
+            --cl-bg: #0b1220;
+            --cl-panel: rgba(255,255,255,0.06);
+            --cl-panel-strong: rgba(2,6,23,0.55);
+            --cl-border: rgba(148,163,184,0.18);
+            --cl-border-soft: rgba(148,163,184,0.12);
+            --cl-text: #e5e7eb;
+            --cl-text-soft: rgba(229,231,235,0.72);
+            --cl-accent-1: #6366f1;
+            --cl-accent-2: #8b5cf6;
+            --cl-accent-3: #22d3ee;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+        }
+        .shimmer-text {
+            background: linear-gradient(90deg, #888 25%, #fff 50%, #888 75%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 2s linear infinite;
+        }
+
         #chatbot-box {
             position: fixed;
             bottom: 20px;
             left: 20px;
-            height: 450px;
-            width: 340px;
-            background-color: #ffffff;
-            border-radius: 14px;
-            box-shadow: 0 4px 20px rgba(0,0,0,0.25);
+            height: 500px;
+            width: 360px;
+            background: linear-gradient(180deg, rgba(15,23,42,0.98), rgba(11,18,32,0.98));
+            border-radius: 18px;
+            box-shadow: -14px 0 30px rgba(2,6,23,0.45), 0 18px 40px rgba(2,6,23,0.35);
+            border: 1px solid var(--cl-border);
             overflow: hidden;
-            font-family: 'Poppins', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica Neue, Arial;
             z-index: 999999;
             display: flex;
             flex-direction: column;
         }
         .chat-header {
-            background: linear-gradient(90deg, #4a6cf7, #6f86ff);
-            color: #fff;
+            background: linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.18));
+            color: var(--cl-text);
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 10px 15px;
-            font-weight: 600;
-            letter-spacing: 0.5px;
+            padding: 14px 16px;
+            font-weight: 700;
+            letter-spacing: 0.2px;
+            border-bottom: 1px solid var(--cl-border);
         }
         #close-chatbot {
             background: transparent;
-            border: none;
-            color: #fff;
-            font-size: 20px;
+            border: 1px solid rgba(148,163,184,0.25);
+            color: var(--cl-text);
+            font-size: 18px;
+            width: 30px;
+            height: 30px;
+            border-radius: 10px;
             cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        #close-chatbot:hover {
+            background: rgba(148,163,184,0.12);
         }
         .chat-body {
             flex: 1;
-            padding: 10px;
+            padding: 14px;
             overflow-y: auto;
-            background-color: #f3f5f9;
+            background:
+                radial-gradient(circle at top left, rgba(99,102,241,0.10), transparent 25%),
+                radial-gradient(circle at bottom right, rgba(34,211,238,0.08), transparent 28%),
+                rgba(2,6,23,0.55);
             display: flex;
             flex-direction: column;
+            gap: 8px;
         }
         .chat-body::-webkit-scrollbar {
             width: 8px;
         }
         .chat-body::-webkit-scrollbar-thumb {
-            background-color: #aab2f6;
+            background-color: rgba(148,163,184,0.35);
             border-radius: 10px;
         }
         .chat-body::-webkit-scrollbar-thumb:hover {
-            background-color: #4a6cf7;
+            background-color: rgba(148,163,184,0.55);
         }
         .chat-footer {
             display: flex;
-            border-top: 1px solid #ddd;
+            border-top: 1px solid var(--cl-border);
+            background: rgba(2,6,23,0.6);
         }
         .chat-footer input {
             flex: 1;
-            padding: 10px;
+            padding: 12px 14px;
             border: none;
             outline: none;
             font-size: 14px;
-            background-color: #ffffff;
-            color: #333333;
+            background-color: transparent;
+            color: var(--cl-text);
+        }
+        .chat-footer input::placeholder {
+            color: rgba(226,232,240,0.42);
         }
         .chat-footer button {
-            background-color: #4a6cf7;
-            color: white;
+            background: linear-gradient(90deg, var(--cl-accent-1), var(--cl-accent-2));
+            color: #fff;
             border: none;
-            padding: 10px 15px;
+            padding: 10px 16px;
             cursor: pointer;
-            transition: 0.3s;
+            transition: 0.2s ease;
         }
         .chat-footer button:hover {
-            background-color: #3d5fe0;
+            filter: brightness(1.05);
         }
         .bot-msg, .user-msg {
-            padding: 8px 12px;
-            border-radius: 15px;
-            margin: 6px 0;
+            padding: 10px 12px;
+            border-radius: 14px;
             max-width: 80%;
             line-height: 1.4;
             font-size: 14px;
             white-space: pre-wrap;
+            box-shadow: 0 8px 18px rgba(2,6,23,0.16);
         }
         .bot-msg {
-            background-color: #e0e6ff;
-            color: #000;
+            background: rgba(255,255,255,0.07);
+            color: var(--cl-text);
+            border: 1px solid var(--cl-border-soft);
             align-self: flex-start;
         }
         .user-msg {
-            background-color: #4a6cf7;
+            background: linear-gradient(90deg, var(--cl-accent-1), var(--cl-accent-2));
             color: white;
             align-self: flex-end;
             margin-left: auto;
         }
+        .bot-msg .shimmer-text, .user-msg .shimmer-text {
+            display: inline-block;
+        }
+        .typing-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .typing-dots {
+            display: inline-flex;
+            gap: 4px;
+        }
+        .typing-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, #a5b4fc, #22d3ee);
+            opacity: 0.4;
+            animation: typingDot 1.2s infinite ease-in-out;
+        }
+        .typing-dots span:nth-child(2) { animation-delay: 0.15s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+        @keyframes typingDot {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+            40% { transform: translateY(-4px); opacity: 1; }
+        }
     `;
     document.head.appendChild(style);
     document.body.appendChild(chatbotContainer);
+    const chatbotBox = document.getElementById('chatbot-box');
+    if (chatbotBox) chatbotBox.setAttribute('data-cognitive-load-ui', 'true');
 
     // Get elements
     const input = document.getElementById("user-input");
@@ -187,7 +263,10 @@
                 console.error("AI assistant error:", data.error);
 
                 if (retryCount < maxRetries) {
-                    return '🔄 Server is busy, retrying in ' +
+                    const reason = String(data.error || 'AI_UNAVAILABLE');
+                    return '🔄 AI request failed (' +
+                        reason +
+                        '), retrying in ' +
                         (retryDelay / 1000) +
                         's... (attempt ' +
                         (retryCount + 1) +
@@ -231,9 +310,14 @@
         while (retryCount <= maxRetries) {
             const thinkingMsg = document.createElement("div");
             thinkingMsg.classList.add("bot-msg");
-            thinkingMsg.textContent = retryCount === 0
-                ? "Thinking..."
-                : 'Retrying... (' + retryCount + '/' + maxRetries + ')';
+            thinkingMsg.innerHTML = `
+                <span class="typing-pill">
+                    <span class="shimmer-text">${retryCount === 0 ? 'Thinking...' : 'Retrying... (' + retryCount + '/' + maxRetries + ')'}</span>
+                    <span class="typing-dots" aria-hidden="true">
+                        <span></span><span></span><span></span>
+                    </span>
+                </span>
+            `;
             chatBody.appendChild(thinkingMsg);
             chatBody.scrollTop = chatBody.scrollHeight;
 

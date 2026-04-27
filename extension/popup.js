@@ -42,7 +42,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 if (!tabs[0]) return;
 
                 chrome.tabs.sendMessage(tabs[0].id, {
-                    type: "TOGGLE_SIDEBAR"
+                    action: "toggle_sidebar"
                 });
             });
         });

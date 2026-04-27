@@ -134,6 +134,8 @@ chrome.runtime.sendMessage({
 // without changing how cognitive load is currently detected (ML score + threshold).
 
 let sidebar = null;
+let currentCaptureImage = null;
+let captureQuestionExpanded = false;
 
 let actionLogs = [];
 
@@ -417,6 +419,136 @@ function ensureSidebarStyles() {
         .swatch { height: 20px; border-radius: 8px; border: 1px solid rgba(15,23,42,0.18); cursor:pointer; }
         .swatch.selected { outline: 2px solid rgba(99,102,241,0.9); }
 
+        #capture-action-hint {
+            color: rgba(226,232,240,0.72);
+            font-size: 12px;
+            line-height: 1.45;
+        }
+
+        #capture-preview-wrap {
+            border-radius: 14px;
+            overflow: hidden;
+            box-shadow: 0 16px 30px rgba(2,6,23,0.28);
+        }
+
+        #capture-preview {
+            display: block;
+            width: 100%;
+            border-radius: 14px;
+            border: 1px solid rgba(148,163,184,0.16);
+            cursor: pointer;
+        }
+
+        #capture-question-panel {
+            margin-bottom: 10px;
+            padding: 12px;
+            border-radius: 14px;
+            background: linear-gradient(180deg, rgba(15,23,42,0.72), rgba(15,23,42,0.52));
+            border: 1px solid rgba(99,102,241,0.18);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.04);
+        }
+
+        #capture-question-input {
+            width: 100%;
+            resize: vertical;
+            border-radius: 12px;
+            border: 1px solid rgba(99,102,241,0.24);
+            background: rgba(2,6,23,0.72);
+            color: #e5e7eb;
+            padding: 11px 12px;
+            font-size: 13px;
+            font-family: inherit;
+            line-height: 1.5;
+            transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+        }
+
+        #capture-question-input::placeholder {
+            color: rgba(226,232,240,0.42);
+        }
+
+        #capture-question-input:focus {
+            outline: none;
+            border-color: rgba(139,92,246,0.95);
+            box-shadow: 0 0 0 3px rgba(99,102,241,0.16);
+            transform: translateY(-1px);
+        }
+
+        #ai-text {
+            font-size: 12px;
+            color: rgba(226,232,240,0.92);
+            white-space: pre-wrap;
+            padding: 12px;
+            border-radius: 12px;
+            border: 1px solid rgba(148,163,184,0.12);
+            background: rgba(2,6,23,0.45);
+            min-height: 56px;
+        }
+
+        #ai-text.thinking-state {
+            background: linear-gradient(135deg, rgba(2,6,23,0.60), rgba(15,23,42,0.82));
+            border-color: rgba(99,102,241,0.28);
+            animation: thinkingPulse 1.8s ease-in-out infinite;
+        }
+
+        .thinking-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .thinking-label {
+            font-weight: 700;
+            letter-spacing: 0.2px;
+        }
+
+        .thinking-dots {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .thinking-dots span {
+            width: 6px;
+            height: 6px;
+            border-radius: 999px;
+            background: linear-gradient(180deg, #a5b4fc, #22d3ee);
+            opacity: 0.35;
+            animation: thinkingDot 1.2s infinite ease-in-out;
+        }
+
+        .thinking-dots span:nth-child(2) { animation-delay: 0.15s; }
+        .thinking-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+        .thinking-subtext {
+            margin-top: 8px;
+            color: rgba(226,232,240,0.72);
+            font-size: 11px;
+        }
+
+        @keyframes thinkingDot {
+            0%, 80%, 100% { transform: translateY(0); opacity: 0.35; }
+            40% { transform: translateY(-4px); opacity: 1; }
+        }
+
+        @keyframes thinkingPulse {
+            0%, 100% { box-shadow: 0 0 0 0 rgba(99,102,241,0.0); transform: translateY(0); }
+            50% { box-shadow: 0 0 0 4px rgba(99,102,241,0.08); transform: translateY(-1px); }
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+        }
+
+        .shimmer-text {
+            background: linear-gradient(90deg, #888 25%, #fff 50%, #888 75%);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            background-clip: text;
+            -webkit-text-fill-color: transparent;
+            animation: shimmer 2s linear infinite;
+        }
+
         .sticky-note { width: 260px; background: var(--sticky-bg, #fffaf0); color: #0b1220; border-radius: 14px; border: 1px solid rgba(15,23,42,0.12); padding: 10px; box-shadow: 0 20px 40px rgba(2,6,23,0.20); }
         .sticky-header { display:flex; align-items:center; justify-content: space-between; gap: 8px; cursor: grab; }
         .sticky-title { font-weight: 800; font-size: 12px; }
@@ -563,9 +695,27 @@ function createSidebar() {
             </div>
 
             <div class="white-panel">
-                <div style="font-weight: 900; font-size: 12px; margin-bottom: 8px;">AI Explanation</div>
-                <img id="capture-preview" style="display:none; width:100%; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16); margin-bottom: 8px;" />
-                <div id="ai-text" style="font-size: 12px; color: rgba(226,232,240,0.9); white-space: pre-wrap;">Capture an area or add a sticky note...</div>
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom: 8px;">
+                    <div style="font-weight: 900; font-size: 12px;">Captured Image</div>
+                    <button id="clear-capture-btn" class="tiny-btn" title="Discard captured image" style="display:none;">✕</button>
+                </div>
+                <div id="capture-preview-wrap" style="display:none; position:relative;">
+                    <img id="capture-preview" style="display:block; width:100%; border-radius: 12px; border: 1px solid rgba(148,163,184,0.16); cursor:pointer;" />
+                    <div style="position:absolute; left:12px; bottom:12px; padding:6px 10px; border-radius:999px; background:rgba(15,23,42,0.82); color:#fff; font-size:11px; pointer-events:none;">Click image to ask a question</div>
+                </div>
+                <div id="capture-action-hint" style="font-size: 12px; color: rgba(226,232,240,0.72); margin: 8px 0 10px;">Capture an area, then choose Analyze or ask a question about the image.</div>
+                <div id="capture-question-panel" style="display:none; margin-bottom: 10px;">
+                    <textarea id="capture-question-input" rows="3" placeholder="Ask a question about this image..." style="width:100%; resize:vertical; border-radius: 10px; border: 1px solid rgba(148,163,184,0.20); padding: 10px; font-size: 13px; font-family: inherit;"></textarea>
+                    <div style="display:flex; gap:10px; margin-top: 8px;">
+                        <button id="ask-capture-question-btn" class="btn btn-primary" style="flex:1;">Ask</button>
+                        <button id="hide-capture-question-btn" class="btn btn-ghost" style="flex:1;">Hide</button>
+                    </div>
+                </div>
+                <div style="display:flex; gap:10px; margin-bottom: 10px;">
+                    <button id="analyze-capture-btn" class="btn btn-success" style="flex:1;" disabled>Analyze Image</button>
+                    <button id="discard-capture-btn" class="btn btn-ghost" style="flex:0;">Discard</button>
+                </div>
+                <div id="ai-text" style="font-size: 12px; color: rgba(226,232,240,0.9); white-space: pre-wrap;">Capture an area to analyze it or ask a question.</div>
             </div>
         </div>
 
@@ -580,6 +730,14 @@ function createSidebar() {
 
     document.body.appendChild(sidebar);
     updateSidebarUI();
+    setCapturePreviewState(Boolean(currentCaptureImage));
+    if (currentCaptureImage) {
+        const img = document.getElementById('capture-preview');
+        if (img) {
+            img.src = currentCaptureImage;
+            img.style.display = 'block';
+        }
+    }
 
     const closeBtn = document.getElementById('close-sidebar');
     if (closeBtn) closeBtn.onclick = () => sidebar.classList.remove('active');
@@ -633,6 +791,37 @@ function createSidebar() {
 
     const downloadBtn = document.getElementById('download-report');
     if (downloadBtn) downloadBtn.onclick = () => downloadReport();
+
+    const preview = document.getElementById('capture-preview');
+    if (preview) {
+        preview.onclick = () => {
+            if (!currentCaptureImage) return;
+            captureQuestionExpanded = true;
+            const panel = document.getElementById('capture-question-panel');
+            const input = document.getElementById('capture-question-input');
+            if (panel) panel.style.display = 'block';
+            if (input) input.focus();
+        };
+    }
+
+    const analyzeBtn = document.getElementById('analyze-capture-btn');
+    if (analyzeBtn) analyzeBtn.onclick = () => analyzeCurrentCapture();
+
+    const askBtn = document.getElementById('ask-capture-question-btn');
+    if (askBtn) askBtn.onclick = () => askCurrentCaptureQuestion();
+
+    const hideQuestionBtn = document.getElementById('hide-capture-question-btn');
+    if (hideQuestionBtn) hideQuestionBtn.onclick = () => {
+        captureQuestionExpanded = false;
+        const panel = document.getElementById('capture-question-panel');
+        if (panel) panel.style.display = 'none';
+    };
+
+    const discardBtn = document.getElementById('discard-capture-btn');
+    if (discardBtn) discardBtn.onclick = () => discardCurrentCapture();
+
+    const clearCaptureBtn = document.getElementById('clear-capture-btn');
+    if (clearCaptureBtn) clearCaptureBtn.onclick = () => discardCurrentCapture();
 }
 
 function openSidebar() {
@@ -653,6 +842,133 @@ function toggleSidebar() {
     } else {
         appendToTerminal('Sidebar closed');
     }
+}
+
+window.addEventListener('cognitive-load-open-sidebar', () => {
+    openSidebar();
+});
+
+function setCapturePreviewState(hasImage) {
+    const previewWrap = document.getElementById('capture-preview-wrap');
+    const clearBtn = document.getElementById('clear-capture-btn');
+    const analyzeBtn = document.getElementById('analyze-capture-btn');
+    const hint = document.getElementById('capture-action-hint');
+    if (previewWrap) previewWrap.style.display = hasImage ? 'block' : 'none';
+    if (clearBtn) clearBtn.style.display = hasImage ? 'inline-flex' : 'none';
+    if (analyzeBtn) analyzeBtn.disabled = !hasImage;
+    if (hint) {
+        hint.textContent = hasImage
+            ? 'Click the image to ask a question, or analyze it directly.'
+            : 'Capture an area to analyze it or ask a question.';
+    }
+}
+
+function setCaptureAiThinking(message = 'Thinking about your question...') {
+    const aiText = document.getElementById('ai-text');
+    if (!aiText) return;
+
+    aiText.classList.add('thinking-state');
+    aiText.innerHTML = `
+        <div class="thinking-row">
+            <span class="shimmer-text">${message}</span>
+            <span class="thinking-dots" aria-hidden="true">
+                <span></span><span></span><span></span>
+            </span>
+        </div>
+        <div class="thinking-subtext">Reading the image and preparing a response...</div>
+    `;
+}
+
+function clearCaptureAiThinking(text) {
+    const aiText = document.getElementById('ai-text');
+    if (!aiText) return;
+
+    aiText.classList.remove('thinking-state');
+    aiText.classList.remove('shimmer-text');
+    aiText.textContent = text || 'Capture an area to analyze it or ask a question.';
+}
+
+function resetCaptureUI() {
+    currentCaptureImage = null;
+    captureQuestionExpanded = false;
+    const preview = document.getElementById('capture-preview');
+    const aiText = document.getElementById('ai-text');
+    const questionPanel = document.getElementById('capture-question-panel');
+    const questionInput = document.getElementById('capture-question-input');
+    if (preview) {
+        preview.src = '';
+        preview.style.display = 'none';
+    }
+    if (questionPanel) questionPanel.style.display = 'none';
+    if (questionInput) questionInput.value = '';
+    clearCaptureAiThinking('Capture an area to analyze it or ask a question.');
+    setCapturePreviewState(false);
+}
+
+function discardCurrentCapture() {
+    resetCaptureUI();
+    appendToTerminal('Captured image discarded');
+}
+
+function analyzeCurrentCapture() {
+    if (!currentCaptureImage) {
+        appendToTerminal('No captured image to analyze');
+        return;
+    }
+
+    setCaptureAiThinking('Analyzing your image...');
+
+    chrome.runtime.sendMessage({
+        action: 'ANALYZE_CAPTURE_IMAGE',
+        image: currentCaptureImage
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            appendToTerminal(`Analyze error: ${chrome.runtime.lastError.message}`);
+            clearCaptureAiThinking('AI is temporarily unavailable.');
+            return;
+        }
+
+        if (response?.status !== 'success') {
+            const message = response?.error || 'AI is temporarily unavailable.';
+            clearCaptureAiThinking(message);
+            appendToTerminal(`Analyze error: ${message}`);
+        }
+    });
+}
+
+function askCurrentCaptureQuestion() {
+    if (!currentCaptureImage) {
+        appendToTerminal('No captured image to question');
+        return;
+    }
+
+    const questionInput = document.getElementById('capture-question-input');
+    const question = String(questionInput?.value || '').trim();
+    if (!question) {
+        appendToTerminal('Please enter a question for the captured image');
+        if (questionInput) questionInput.focus();
+        return;
+    }
+
+    setCaptureAiThinking('Thinking about your question...');
+
+    chrome.runtime.sendMessage({
+        action: 'ASK_CAPTURE_IMAGE_QUESTION',
+        image: currentCaptureImage,
+        question
+    }, (response) => {
+        if (chrome.runtime.lastError) {
+            appendToTerminal(`Question error: ${chrome.runtime.lastError.message}`);
+            clearCaptureAiThinking('AI is temporarily unavailable.');
+            return;
+        }
+
+        if (response?.status !== 'success') {
+            const message = response?.error || 'AI is temporarily unavailable.';
+            clearCaptureAiThinking(message);
+            appendToTerminal(`Question error: ${message}`);
+        }
+    });
 }
 
 // --- Sticky Note Logic ---
@@ -766,8 +1082,23 @@ function applyFocusMode() {
     const clutterTags = ['aside', 'footer', 'nav'];
     const clutterPatterns = ['ad', 'sidebar', 'social', 'popup', 'banner', 'promo'];
 
+    const isExtensionUi = (el) => {
+        if (!(el instanceof Element)) return false;
+        if (el.hasAttribute('data-cognitive-load-ui')) return true;
+        if (el.closest && el.closest('[data-cognitive-load-ui]')) return true;
+        if (el.id === 'premium-sidebar-container') return true;
+        if (el.id === 'chatbot-box') return true;
+        if (el.closest && el.closest('#chatbot-box')) return true;
+        // Anything inside our sidebar should never be hidden by focus mode.
+        if (el.closest && el.closest('#premium-sidebar-container')) return true;
+        // Keep the ML indicator/toast visible as well.
+        if (el.id === 'ml-cognitive-load-indicator') return true;
+        return false;
+    };
+
     clutterTags.forEach(tag => {
         document.querySelectorAll(tag).forEach(el => {
+            if (isExtensionUi(el)) return;
             el.dataset._origDisplay = el.style.display || '';
             el.style.display = 'none';
             el.classList.add('clutter-hidden');
@@ -775,6 +1106,7 @@ function applyFocusMode() {
     });
 
     document.querySelectorAll('div, section, header').forEach(el => {
+        if (isExtensionUi(el)) return;
         const idOrClass = (el.id + ' ' + el.className).toLowerCase();
         if (clutterPatterns.some(p => idOrClass.includes(p))) {
             el.dataset._origOpacity = el.style.opacity || '';
@@ -845,6 +1177,11 @@ function getSemanticTargets(selector) {
 
 function hideSemanticElement(el) {
     if (!(el instanceof Element)) return;
+    // Never hide our own extension UI.
+    if (el.hasAttribute('data-cognitive-load-ui') || (el.closest && el.closest('[data-cognitive-load-ui]'))) return;
+    if (el.id === 'premium-sidebar-container' || (el.closest && el.closest('#premium-sidebar-container'))) return;
+    if (el.id === 'chatbot-box' || (el.closest && el.closest('#chatbot-box'))) return;
+    if (el.id === 'ml-cognitive-load-indicator' || (el.closest && el.closest('#ml-cognitive-load-indicator'))) return;
     if (!el.classList.contains('semantic-hidden')) {
         el.dataset._semanticOrigDisplay = el.style.display || '';
         el.dataset._semanticOrigVisibility = el.style.visibility || '';
@@ -1135,7 +1472,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ========== SIDEBAR / CAPTURE MESSAGE HANDLERS (ADDITIVE) ==========
 chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.action === "toggle_sidebar") {
+        console.log('[NeedHelp] content.js received toggle_sidebar');
         toggleSidebar();
+    }
+
+    if (msg?.action === "open_sidebar") {
+        console.log('[NeedHelp] content.js received open_sidebar');
+        openSidebar();
     }
 
     if (msg?.action === "APPLY_SEMANTIC_CLASSIFICATION") {
@@ -1176,19 +1519,29 @@ chrome.runtime.onMessage.addListener((msg) => {
     if (msg?.action === "DISPLAY_CAPTURE") {
         if (!sidebar) createSidebar();
         sidebar.classList.add('active');
+        currentCaptureImage = msg.image || null;
         const img = document.getElementById('capture-preview');
         if (img) {
             img.src = msg.image;
             img.style.display = 'block';
         }
+        const questionPanel = document.getElementById('capture-question-panel');
+        const questionInput = document.getElementById('capture-question-input');
+        if (questionPanel) questionPanel.style.display = 'none';
+        if (questionInput) questionInput.value = '';
+        captureQuestionExpanded = false;
+        setCapturePreviewState(Boolean(currentCaptureImage));
         const aiText = document.getElementById('ai-text');
-        if (aiText) aiText.textContent = "AI is analyzing image...";
+        if (aiText) aiText.textContent = "Image captured. Analyze it or click the image to ask a question.";
         appendToTerminal('Capture received');
     }
 
     if (msg?.action === "AI_RESULT") {
         const aiText = document.getElementById('ai-text');
-        if (aiText) aiText.textContent = msg.text || '';
+        if (aiText) {
+            aiText.classList.remove('thinking-state');
+            aiText.textContent = msg.text || '';
+        }
         appendToTerminal('AI result received');
     }
 });

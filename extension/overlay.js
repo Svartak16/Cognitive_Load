@@ -50,7 +50,12 @@
             w: Math.abs(w),
             h: Math.abs(h)
         };
-        chrome.runtime.sendMessage({ action: "FINALIZE_CAPTURE", area });
+        chrome.runtime.sendMessage({
+            action: "FINALIZE_CAPTURE",
+            area,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight
+        });
         canvas.remove();
     });
 })();

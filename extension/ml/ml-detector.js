@@ -125,6 +125,7 @@ class MLCognitiveLoadDetector {
       
       const indicator = document.createElement('div');
       indicator.id = 'ml-cognitive-load-indicator';
+      indicator.setAttribute('data-cognitive-load-ui', 'true');
       indicator.style.cssText = `
         position: fixed;
         top: 10px;
@@ -217,6 +218,7 @@ class MLCognitiveLoadDetector {
     showLoadNotification(score, level) {
       // Create a subtle notification the user can click to open the AI assistant
       const notification = document.createElement('div');
+      notification.setAttribute('data-cognitive-load-ui', 'true');
       notification.style.cssText = `
         position: fixed;
         top: 80px;
@@ -258,22 +260,42 @@ class MLCognitiveLoadDetector {
       document.head.appendChild(style);
       
       // Click handler
-      notification.addEventListener('click', () => {
-        // Ask background script to toggle the Cognitive Load sidebar UI
-        // (contains focus mode, sticky notes, capture + image analysis preview, and audit report).
+      const openSidebarNow = () => {
         try {
-          if (window.cognitiveLoadDebug?.openSidebar) {
-            window.cognitiveLoadDebug.openSidebar();
-          } else {
-            this.sendMessageSafe({ type: 'REQUEST_TOGGLE_SIDEBAR' });
-          }
+          // Single source of truth: let background tell content.js to OPEN (not toggle).
+          // This prevents "double toggle" (open then immediately close) races.
+          console.log('[NeedHelp] toast clicked → requesting open_sidebar');
+          this.sendMessageSafe({ type: 'REQUEST_TOGGLE_SIDEBAR' }, (resp) => {
+            console.log('[NeedHelp] background responded:', resp);
+          });
         } catch (error) {
           console.warn('Sidebar open failed:', error);
-          this.sendMessageSafe({ type: 'REQUEST_TOGGLE_SIDEBAR' });
         }
+      };
+
+      let notificationActivated = false;
+
+      const handleNotificationClick = (event) => {
+        if (notificationActivated) return;
+        notificationActivated = true;
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+
+        // Ask background script to toggle the Cognitive Load sidebar UI
+        // (contains focus mode, sticky notes, capture + image analysis preview, and audit report).
+        openSidebarNow();
         notification.style.animation = 'slideOut 0.3s ease-out';
-        setTimeout(() => notification.remove(), 300);
+        setTimeout(() => notification.remove(), 650);
+      };
+
+      notification.addEventListener('pointerup', handleNotificationClick);
+      notification.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          handleNotificationClick(event);
+        }
       });
+      notification.tabIndex = 0;
+      notification.setAttribute('role', 'button');
       
       document.body.appendChild(notification);
       

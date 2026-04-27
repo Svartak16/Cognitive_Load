@@ -208,7 +208,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                     sendResponse?.({ status: "error", error: err.message });
                     return;
                 }
-                processCrop(dataUrl, message.area, tabId)
+                processCrop(dataUrl, message.area, tabId, {
+                    viewportWidth: message.viewportWidth,
+                    viewportHeight: message.viewportHeight
+                })
                     .then(() => sendResponse?.({ status: "success" }))
                     .catch((e) => sendResponse?.({ status: "error", error: e?.message || String(e) }));
             });
@@ -254,6 +257,60 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 auditReport = Array.isArray(list) ? list : [];
                 sendResponse?.({ data: auditReport });
             });
+            return true;
+        }
+
+        if (message.action === "ANALYZE_CAPTURE_IMAGE") {
+            const tabId = sender?.tab?.id;
+            if (!tabId) {
+                sendResponse?.({ status: "error", error: "No sender tab id available." });
+                return true;
+            }
+
+            (async () => {
+                try {
+                    if (!message.image) {
+                        throw new Error('Missing image data.');
+                    }
+                    await analyzeWithGemini(message.image, tabId, message.prompt || '');
+                    sendResponse?.({ status: 'success' });
+                } catch (error) {
+                    sendResponse?.({ status: 'error', error: error?.message || String(error) });
+                }
+            })();
+            return true;
+        }
+
+        if (message.action === "ASK_CAPTURE_IMAGE_QUESTION") {
+            const tabId = sender?.tab?.id;
+            if (!tabId) {
+                sendResponse?.({ status: "error", error: "No sender tab id available." });
+                return true;
+            }
+
+            (async () => {
+                try {
+                    if (!message.image) {
+                        throw new Error('Missing image data.');
+                    }
+                    if (!message.question) {
+                        throw new Error('Missing question.');
+                    }
+
+                    const prompt = `You are helping the user understand a captured screenshot.
+
+Use the image and answer the user's question clearly and briefly.
+If the image is unclear, say so.
+If the question asks for a solution, explain the steps instead of guessing.
+
+User question: ${String(message.question)}
+`;
+                    await analyzeWithGemini(message.image, tabId, prompt);
+                    sendResponse?.({ status: 'success' });
+                } catch (error) {
+                    sendResponse?.({ status: 'error', error: error?.message || String(error) });
+                }
+            })();
             return true;
         }
     }
@@ -327,10 +384,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
             const data = await callGeminiProxy({
                 kind: 'text',
+                source: 'chatbot',
                 prompt
             });
 
-            if (data?.error) return sendResponse({ error: 'AI_UNAVAILABLE' });
+            if (data?.error) return sendResponse({ error: data.error });
             return sendResponse({ text: data?.text || '' });
         })();
         return true;
@@ -524,11 +582,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     
     // Toggle in-page Cognitive Load sidebar on request (from ml-detector banner click)
     if (message.type === 'REQUEST_TOGGLE_SIDEBAR') {
+        console.log('[NeedHelp] REQUEST_TOGGLE_SIDEBAR received', {
+            hasSenderTab: Boolean(sender?.tab?.id),
+            senderUrl: sender?.tab?.url
+        });
+        const sendToTab = (tabId) => {
+            if (!tabId) return false;
+            try {
+                console.log('[NeedHelp] sending toggle_sidebar to tab', tabId);
+                chrome.tabs.sendMessage(tabId, { action: "open_sidebar" }, () => {
+                    // Intentionally ignore "no receiver" errors (e.g., chrome:// pages)
+                    const err = chrome.runtime.lastError;
+                    if (err) console.log('[NeedHelp] sendMessage lastError:', err.message);
+                });
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
         const tabId = sender?.tab?.id;
-        if (tabId) {
-            chrome.tabs.sendMessage(tabId, { action: "toggle_sidebar" });
+        if (sendToTab(tabId)) {
+            sendResponse?.({ success: true });
+            return true;
         }
-        // Fire-and-forget; no response needed
+
+        // Fallback: active tab (covers edge cases where sender.tab is missing)
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            const activeId = tabs?.[0]?.id;
+            console.log('[NeedHelp] fallback active tabId', activeId);
+            sendToTab(activeId);
+            sendResponse?.({ success: Boolean(activeId) });
+        });
+        return true;
     }
     
     // Update ML cognitive load score in storage
@@ -809,6 +895,7 @@ Remember: return only valid JSON matching the schema.`;
 
     const data = await callGeminiProxy({
         kind: 'text',
+        source: 'background',
         prompt: `${SEMANTIC_CLASSIFICATION_SYSTEM_PROMPT}\n\n${userMessage}`
     });
 
@@ -851,7 +938,7 @@ async function appendAuditReportEntry(entry) {
 }
 
 // ---------- IMAGE CROPPING ----------
-async function processCrop(dataUrl, area, tabId) {
+async function processCrop(dataUrl, area, tabId, viewport = {}) {
     try {
         if (!area || typeof area.x !== 'number' || typeof area.y !== 'number' || typeof area.w !== 'number' || typeof area.h !== 'number') {
             throw new Error('Invalid crop area.');
@@ -861,15 +948,20 @@ async function processCrop(dataUrl, area, tabId) {
         const blob = await response.blob();
         const bitmap = await createImageBitmap(blob);
 
-        const canvas = new OffscreenCanvas(area.w, area.h);
+        const scaleX = Number(viewport.viewportWidth) > 0 ? bitmap.width / Number(viewport.viewportWidth) : 1;
+        const scaleY = Number(viewport.viewportHeight) > 0 ? bitmap.height / Number(viewport.viewportHeight) : 1;
+        const cropX = Math.max(0, Math.round(area.x * scaleX));
+        const cropY = Math.max(0, Math.round(area.y * scaleY));
+        const cropW = Math.max(1, Math.round(area.w * scaleX));
+        const cropH = Math.max(1, Math.round(area.h * scaleY));
+        const canvas = new OffscreenCanvas(cropW, cropH);
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(bitmap, area.x, area.y, area.w, area.h, 0, 0, area.w, area.h);
+        ctx.drawImage(bitmap, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
 
         const croppedBlob = await canvas.convertToBlob({ type: 'image/png' });
         const croppedUrl = await blobToDataUrl(croppedBlob, 'image/png');
 
         chrome.tabs.sendMessage(tabId, { action: "DISPLAY_CAPTURE", image: croppedUrl });
-        await analyzeWithGemini(croppedUrl, tabId);
     } catch (e) {
         console.error("Cropping Error:", e);
         chrome.tabs.sendMessage(tabId, {
@@ -926,7 +1018,9 @@ async function getGeminiProxyUrl() {
         }
     });
     if (managed) return managed;
-    return (await getStorageValue(GEMINI_PROXY_URL_STORAGE_KEY)) || '';
+    const stored = (await getStorageValue(GEMINI_PROXY_URL_STORAGE_KEY)) || '';
+    if (stored) return stored;
+    return 'http://localhost:8787/gemini';
 }
 
 async function callGeminiProxy(payload) {
@@ -954,7 +1048,7 @@ async function callGeminiProxy(payload) {
     }
 }
 
-async function analyzeWithGemini(dataUrl, tabId) {
+async function analyzeWithGemini(dataUrl, tabId, promptOverride = '') {
     // STEP 1: Cooldown Check (Rate Limiting)
     const now = Date.now();
     const lastGeminiCall = (await getStorageValue(LAST_GEMINI_CALL_STORAGE_KEY)) || 0;
@@ -977,7 +1071,7 @@ async function analyzeWithGemini(dataUrl, tabId) {
     }
 
     try {
-        const prompt = `You are a visual analysis assistant.
+        const prompt = promptOverride || `You are a visual analysis assistant.
 
 1. Identify the image type:
 - Text/Notes
@@ -1006,6 +1100,7 @@ Rules:
 
         const data = await callGeminiProxy({
             kind: 'vision',
+            source: 'background',
             mimeType: 'image/png',
             imageBase64: base64,
             prompt
